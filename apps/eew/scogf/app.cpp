@@ -30,14 +30,17 @@
 #include <seiscomp/core/datamessage.h>
 #include <seiscomp/core/strings.h>
 #include <seiscomp/client/inventory.h>
+#include <seiscomp/datamodel/eventparameters_package.h>
 #include <seiscomp/datamodel/utils.h>
 #include <seiscomp/datamodel/vs/envelope.h>
 #include <seiscomp/datamodel/vs/envelopechannel.h>
 #include <seiscomp/datamodel/vs/envelopevalue.h>
+#include <seiscomp/io/archive/xmlarchive.h>
 #include <seiscomp/math/geo.h>
 #include <seiscomp/utils/misc.h>
 
 #include <filesystem>
+#include <limits>
 
 #include "app.h"
 
@@ -58,7 +61,7 @@ namespace {
 
 
 template<typename T, typename... Args>
-std::string join(const std::string &link, T head, Args... args) {
+string join(const string &link, T head, Args... args) {
 	return Core::toString(head) + (... + (link + Core::toString(args)));
 }
 
@@ -76,6 +79,35 @@ App::App(int argc, char **argv) : Application(argc, argv) {
 	addMessagingSubscription("LOCATION");
 	addMessagingSubscription("MAGNITUDE");
 	bindSettings(&_settings);
+}
+// <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+
+
+// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+bool App::validateParameters() {
+	if ( !Client::Application::validateParameters() ) {
+		return false;
+	}
+
+	if ( !_settings.epFile.empty() || !_settings.originID.empty() ) {
+		if ( _settings.recordStreamURL.empty() ) {
+			cerr << "Error: --record-url is required in combination with --ep or --origin-id" << endl;
+			return false;
+		}
+
+		if ( !_settings.epFile.empty() ) {
+			setMessagingEnabled(false);
+		}
+	}
+
+	if ( _settings.commentID.empty() ) {
+		cerr << "Error: commentID must not be empty" << endl;
+		return false;
+	}
+
+	return true;
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
@@ -116,11 +148,74 @@ bool App::init() {
 			_associationTable.remove(static_cast<Origin*>(obj));
 		}
 	});
-	_streamFirewall.allow = Firewall::StringSet(_settings.stations.include.begin(), _settings.stations.include.end());
-	_streamFirewall.deny = Firewall::StringSet(_settings.stations.exclude.begin(), _settings.stations.exclude.end());
+
+	_slocFirewall.allow = Firewall::StringSet(
+		_settings.sensorLocations.include.begin(), _settings.sensorLocations.include.end()
+	);
+	_slocFirewall.deny = Firewall::StringSet(
+		_settings.sensorLocations.exclude.begin(), _settings.sensorLocations.exclude.end()
+	);
+
 	enableTimer(_settings.updateInterval);
 
 	return true;
+}
+// <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+
+
+// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+bool App::run() {
+	if ( !_settings.epFile.empty() ) {
+		IO::RecordStreamPtr rs = IO::RecordStream::Open(_settings.recordStreamURL.data());
+		if ( !rs ) {
+			SEISCOMP_ERROR("%s: failed to open recordstream", _settings.recordStreamURL);
+			return false;
+		}
+
+		IO::XMLArchive ar;
+		if ( !ar.open(_settings.epFile.data()) ) {
+			SEISCOMP_ERROR("%s: failed to open XML file", _settings.epFile);
+			return false;
+		}
+
+		EventParametersPtr ep;
+		ar >> ep;
+		ar.close();
+
+		if ( !ep ) {
+			SEISCOMP_ERROR("%s: no event parameters found", _settings.epFile);
+			return false;
+		}
+
+		for ( size_t i = 0; i < ep->originCount(); ++i ) {
+			process(ep->origin(i), rs.get());
+		}
+
+		return true;
+	}
+	else if ( !_settings.originID.empty() ) {
+		IO::RecordStreamPtr rs = IO::RecordStream::Open(_settings.recordStreamURL.data());
+		if ( !rs ) {
+			SEISCOMP_ERROR("%s: failed to open recordstream", _settings.recordStreamURL);
+			return false;
+		}
+
+		OriginPtr org = static_cast<Origin*>(
+			query()->getObject(Origin::TypeInfo(), _settings.originID)
+		);
+
+		if ( !org ) {
+			SEISCOMP_ERROR("%s: origin not found", _settings.originID);
+			return false;
+		}
+
+		process(org.get(), rs.get());
+		return true;
+	}
+
+	return Client::Application::run();
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
@@ -184,7 +279,7 @@ void App::handleMessage(Seiscomp::Core::Message *msg) {
 			}
 
 			auto sid = join(".", chan->waveformID().networkCode(), chan->waveformID().stationCode(), chan->waveformID().locationCode());
-			if ( _streamFirewall.isDenied(sid) ) {
+			if ( _slocFirewall.isDenied(sid) ) {
 				continue;
 			}
 
@@ -193,7 +288,7 @@ void App::handleMessage(Seiscomp::Core::Message *msg) {
 				if ( value->type() != "vel" ) {
 					// Velocity channels are required
 					continue;
-				 }
+				}
 
 				EnvelopeBuffer *buffer;
 
@@ -240,7 +335,7 @@ void App::handleMessage(Seiscomp::Core::Message *msg) {
 					buffer = it->second.get();
 				}
 
-				buffer->push_back({
+				buffer->append({
 					vsenv->timestamp(),
 					value->value()
 				});
@@ -372,6 +467,108 @@ void App::addAssociations(Seiscomp::DataModel::Origin *org) {
 	// Update the end-of-lifetime timestamp according to the maximum
 	// expected traveltime scaled by postArrivalTimeShare.
 	eval->eol += Core::TimeSpan(maxTravelTime * _settings.postArrivalTimeShare * 0.01);
+}
+// <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+
+
+// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+void App::process(Seiscomp::DataModel::Origin *org, IO::RecordStream *rs) {
+	_envelopeBuffers.clear();
+
+	while ( RecordPtr rec = rs->next() ) {
+		auto sid = join(".", rec->networkCode(), rec->stationCode(), rec->locationCode());
+		if ( _slocFirewall.isDenied(sid) ) {
+			SEISCOMP_WARNING("%s: location is denied due to configuration", sid);
+			continue;
+		}
+
+		EnvelopeBuffer *buffer;
+
+		auto it = _envelopeBuffers.find(sid);
+		if ( it == _envelopeBuffers.end() ) {
+			auto inv = Client::Inventory::Instance();
+			auto sloc = inv->getSensorLocation(rec->networkCode(),
+			                                   rec->stationCode(),
+			                                   rec->locationCode(),
+			                                   rec->startTime());
+			if ( !sloc ) {
+				SEISCOMP_WARNING("%s: no inventory information", sid);
+				continue;
+			}
+
+			try {
+				auto loc = DataModel::getLocation(sloc);
+				double elev = 0;
+				try {
+					elev = sloc->elevation();
+				}
+				catch ( ... ) {
+					try {
+						elev = sloc->station()->elevation();
+					}
+					catch ( ... ) {}
+				}
+
+				buffer = new EnvelopeBuffer(numeric_limits<EnvelopeBuffer::size_type>::max());
+				buffer->lat = loc.lat;
+				buffer->lon = loc.lon;
+				buffer->elev = elev;
+
+				addAssociations(sid, *buffer);
+
+				_envelopeBuffers[sid].reset(buffer);
+			}
+			catch( exception &e ) {
+				SEISCOMP_WARNING("%s: %s", sid, e.what());
+				break;
+			}
+		}
+		else {
+			buffer = it->second.get();
+		}
+
+		DoubleArrayPtr tmp;
+		const DoubleArray *data = DoubleArray::ConstCast(rec->data());
+		if ( !data ) {
+			tmp = static_cast<DoubleArray*>(rec->data()->copy(Array::DOUBLE));
+			data = tmp.get();
+		}
+
+		auto timestamp = rec->startTime();
+		auto dt = Core::TimeSpan(1.0 / rec->samplingFrequency());
+
+		for ( int i = 0; i < data->size(); ++i ) {
+			buffer->append({ timestamp, data->get(i) });
+			timestamp += dt;
+		}
+
+		buffer->dirty = true;
+	}
+
+	Evaluation eval;
+	process(org, eval);
+
+	auto cmt = org->comment(_settings.commentID);
+
+	if ( eval.gof >= 0 ) {
+		if ( !cmt ) {
+			cmt = new Comment;
+			cmt->setId(_settings.commentID);
+			org->add(cmt);
+			touch(org);
+			org->update();
+		}
+
+		cmt->setText(Core::toString(eval.gof));
+		cmt->update();
+	}
+	else if ( cmt ) {
+		org->remove(cmt);
+		touch(org);
+		org->update();
+	}
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 

@@ -33,6 +33,7 @@
 #include <seiscomp/datamodel/origin.h>
 #include <seiscomp/datamodel/publicobjectcache.h>
 #include <seiscomp/geo/featureset.h>
+#include <seiscomp/io/recordstream.h>
 #include <seiscomp/seismology/ttt.h>
 #include <seiscomp/utils/stringfirewall.h>
 #include <memory>
@@ -58,7 +59,10 @@ class App : public Seiscomp::Client::Application {
 	//  Application interface
 	// ----------------------------------------------------------------------
 	public:
+		bool validateParameters() override;
+
 		bool init() override;
+		bool run() override;
 
 		void handleTimeout() override;
 		void handleMessage(Seiscomp::Core::Message *msg) override;
@@ -82,6 +86,12 @@ class App : public Seiscomp::Client::Application {
 				using circular_buffer<Envelope>::circular_buffer;
 
 			public:
+				void append(const Envelope &env) {
+					// TODO: Check overlaps and out-of-order
+					push_back(env);
+				}
+
+			public:
 				double lat;
 				double lon;
 				double elev;
@@ -92,6 +102,7 @@ class App : public Seiscomp::Client::Application {
 		                            const std::string &sid, const EnvelopeBuffer &buffer);
 		void addAssociations(const std::string &sid, const EnvelopeBuffer &buffer);
 		void addAssociations(Seiscomp::DataModel::Origin *org);
+		void process(Seiscomp::DataModel::Origin *org, Seiscomp::IO::RecordStream *rs);
 		void process(Seiscomp::DataModel::Origin *org, Evaluation &eval);
 
 
@@ -106,15 +117,37 @@ class App : public Seiscomp::Client::Application {
 		struct Settings : AbstractSettings {
 			void accept(SettingsLinker &linker) override {
 				linker
-				& cfg(cacheSize, "ogf.cacheSize")
-				& cfg(maximumDistance, "ogf.maximumDistance")
-				& cfg(updateInterval, "ogf.updateInverval")
-				& cfg(preArrivalTimeWindow, "ogf.preArrivalTimeWindow")
-				& cfg(postArrivalTimeShare, "ogf.postArrivalTimeShare")
-				& cfg(predictionArchivePath, "ogf.predictionArchivePath")
-				& cfg(zoneFile, "ogf.zoneFile")
+				& cfg(cacheSize, "cacheSize")
+				& cfg(maximumDistance, "maximumDistance")
+				& cfg(minimumStations, "minimumStations")
+				& cfg(updateInterval, "updateInverval")
+				& cfg(preArrivalTimeWindow, "preArrivalTimeWindow")
+				& cfg(postArrivalTimeShare, "postArrivalTimeShare")
+				& cfg(predictionArchivePath, "predictionArchivePath")
+				& cfg(zoneFile, "zoneFile")
+				& cfg(commentID, "commentID")
 				& cfg(envelopes, "envelopes")
-				& cfg(stations, "stations")
+				& cfg(sensorLocations, "sensorLocations")
+				& cli(recordStreamURL, "Input", "record-url,I",
+					"The RecordStream source URL. Format: [service://]location[#type]. "
+					"'service' is the name of the RecordStream driver. If 'service' is "
+					"not given, 'file://' is being used and the name of a miniSEED file "
+					"can be given.\n"
+					"This parameter is only required when reading pre-calculated envelope "
+					"values in offline processing, see --ep and --origin-id."
+				)
+				& cli(epFile, "Input", "ep",
+					"Name of input XML file (SCML) with all origin for offline "
+					"processing.  Use '-' to read from stdin. The database connection "
+					"is not received from messaging and must be provided. Results will "
+					"be written as XML to stdout. Please note that envelope data must "
+					"be provided with -I."
+				)
+				& cli(originID, "Input", "origin-id,O",
+					"OriginID to be processed. ")
+				& cliSwitch(dump, "Mode", "dump",
+					"Dump results as XML rather than sending messages."
+				)
 				;
 			}
 
@@ -142,21 +175,27 @@ class App : public Seiscomp::Client::Application {
 				std::vector<std::string> include;
 				std::vector<std::string> exclude;
 				std::string              defaultSoilClass;
-			}                        stations;
+			}                        sensorLocations;
 
 			Seiscomp::Core::TimeSpan cacheSize{1800, 0};
 			size_t                   updateInterval{1};
 			double                   maximumDistance{5};
+			size_t                   minimumStations{0};
 			double                   preArrivalTimeWindow{0};
 			double                   postArrivalTimeShare{150};
 			std::string              predictionArchivePath{"@DATADIR@/scogf"};
 			std::string              zoneFile;
+			std::string              commentID{"eew.ogf"};
+			std::string              recordStreamURL;
+			std::string              epFile;
+			std::string              originID;
+			bool                     dump{false};
 		} _settings;
 
 		Cache                        _cache;
 		EnvelopeBuffers              _envelopeBuffers;
 		AssociationTable             _associationTable;
-		Firewall                     _streamFirewall;
+		Firewall                     _slocFirewall;
 		Prediction                   _prediction;
 		Seiscomp::Geo::GeoFeatureSet _zones;
 		Seiscomp::TravelTimeTable    _ttt;
