@@ -79,7 +79,7 @@ Evaluation *AssociationTable::insert(ObjectType org) {
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 Association *AssociationTable::insert(
-	const std::string &sid, ObjectType org
+	ObjectType org, const std::string &sid
 ) {
 	auto it = _assoc.find({ org, sid });
 	if ( it != _assoc.end() ) {

@@ -29,13 +29,17 @@
 
 
 #include <seiscomp/core/typedarray.h>
+
+#include <filesystem>
 #include <string>
 
 
 namespace EEW::OGF {
 
 
+Seiscomp::Array *loadNpy(const std::filesystem::path &path);
 Seiscomp::Array *loadNpy(const std::string &filename);
+Seiscomp::Array *loadNpy(const char *filename);
 
 
 }

@@ -41,6 +41,7 @@
 
 #include <filesystem>
 #include <limits>
+#include <cmath>
 
 #include "app.h"
 
@@ -133,6 +134,8 @@ bool App::init() {
 		SEISCOMP_ERROR("Predictions: %s", e.what());
 		return false;
 	}
+
+	_prediction.setDefaultSoilClass(_settings.sensorLocations.defaultSoilClass);
 
 	SEISCOMP_DEBUG("Available envelope soil classes: %s", Core::join(_prediction.soilClasses(), ", "));
 	SEISCOMP_DEBUG("Available gmpe zones: %s", Core::join(_prediction.zones(), ", "));
@@ -405,14 +408,15 @@ Association *App::addAssociation(Seiscomp::DataModel::Origin *org,
 		return nullptr;
 	}
 
-	auto assoc = _associationTable.insert(sid, org);
-
 	auto ttimes = _ttt.compute(org->latitude().value(), org->longitude().value(),
 	                           depth,
 	                           buffer.lat, buffer.lon, buffer.elev);
 	if ( !ttimes ) {
 		return nullptr;
 	}
+
+	auto assoc = _associationTable.insert(org, sid);
+	assoc->dist = Math::Geo::deg2km(dist);
 
 	// Travel times are assumed to be sorted by time
 	for ( const auto &tt : *ttimes ) {
@@ -426,7 +430,7 @@ Association *App::addAssociation(Seiscomp::DataModel::Origin *org,
 		}
 	}
 
-	auto duration = Core::TimeSpan(max(assoc->ttP, assoc->ttS) * _settings.postArrivalTimeShare * 0.01);
+	auto duration = Core::TimeSpan(max(assoc->ttP, assoc->ttS) * _settings.postArrivalTimeShare);
 	assoc->endTime = org->time().value() + duration;
 
 	delete ttimes;
@@ -470,7 +474,7 @@ void App::addAssociations(Seiscomp::DataModel::Origin *org) {
 
 	// Update the end-of-lifetime timestamp according to the maximum
 	// expected traveltime scaled by postArrivalTimeShare.
-	eval->eol += Core::TimeSpan(maxTravelTime * _settings.postArrivalTimeShare * 0.01);
+	eval->eol += Core::TimeSpan(maxTravelTime * _settings.postArrivalTimeShare);
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
@@ -605,17 +609,132 @@ void App::process(Seiscomp::DataModel::Origin *org, IO::RecordStream *rs) {
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 void App::process(Seiscomp::DataModel::Origin *org, Evaluation &eval) {
-	// Do not check the eval.dirty flag as this has been done already
-	for ( const auto &[org, sid] : _associationTable.sensors(org) ) {
-		auto it = _envelopeBuffers.find(sid);
-		if ( it == _envelopeBuffers.end() ) {
-			continue;
+	size_t magCount = org->magnitudeCount();
+
+	for ( size_t i = 0; i < magCount; ++i ) {
+		auto mag = org->magnitude(i);
+		SEISCOMP_DEBUG("Compute %s/%s", org->publicID(), mag->type());
+
+		vector<double> gofs;
+
+		// Do not check the eval.dirty flag as this has been done already
+		for ( const auto &[org, sid] : _associationTable.sensors(org) ) {
+			auto it = _envelopeBuffers.find(sid);
+			if ( it == _envelopeBuffers.end() ) {
+				continue;
+			}
+
+			auto buffer = it->second.get();
+			if ( !buffer || buffer->empty() ) {
+				// No envelopes
+				continue;
+			}
+
+			auto assoc = _associationTable.assoc(org, sid);
+			if ( !assoc ) {
+				// No association
+				continue;
+			}
+
+			ArrayPtr array;
+			try {
+				array = _prediction.get(sid, mag->magnitude().value(), assoc->dist);
+				if ( !array ) {
+					// No predictions
+					continue;
+				}
+			}
+			catch ( ... ) {
+				// No predictions
+				continue;
+			}
+
+			double scale = 1.0;
+			try {
+				scale = _prediction.pgv(org, mag->magnitude().value(), assoc->dist);
+			}
+			catch ( ... ) {}
+
+			DoubleArrayPtr pred = DoubleArray::Cast(array);
+			if ( !pred ) {
+				pred = static_cast<DoubleArray*>(array->copy(Array::DOUBLE));
+			}
+
+			scale /= pred->max();
+
+			double amplification = _prediction.amplification(sid);
+			scale *= amplification;
+
+			// Desired time window (a)
+			double startTimeA = assoc->ttP - _settings.preArrivalTimeWindow;
+			double endTimeA = assoc->ttS * _settings.postArrivalTimeShare;
+
+			// Time window of available template (b)
+			double startTimeB = 0;
+			double endTimeB = pred->size();
+
+			// The time interval (the samples) covered by envelope values in the buffer (c)
+			double startTimeC = static_cast<double>(buffer->front().timestamp - org->time().value());
+			double endTimeC = static_cast<double>(buffer->back().timestamp - org->time().value()) + 1.0;
+
+			double startTime = max(startTimeA, max(startTimeB, startTimeC));
+			double endTime = min(endTimeA, min(endTimeB, endTimeC));
+
+			int idx0 = static_cast<int>(startTime);
+			int idx1 = static_cast<int>(endTime);
+
+			if ( idx0 >= idx1 ) {
+				SEISCOMP_DEBUG("Empty correlation time window: %d:%d", idx0, idx1);
+				continue;
+			}
+
+			int count = idx1 - idx0;
+			double *dataPred = pred->typedData() + idx0;
+
+			// Move buffer to start index
+			auto bit = buffer->begin();
+			for ( int i = 0; i < idx0; ++i ) {
+				++bit;
+			}
+
+			double maxObs, maxPred;
+			double sumX{0}, sumY{0}, sumX2{0}, sumY2{0}, sumXY{0};
+
+			for ( int i = 0; i < count; ++i, ++bit, ++dataPred ) {
+				auto obs = bit->value;
+				auto pred = *dataPred;
+
+				if ( !i ) {
+					maxObs = obs;
+					maxPred = pred;
+				}
+				else {
+					if ( maxObs < obs ) {
+						maxObs = obs;
+					}
+					if  ( maxPred < pred ) {
+						maxPred = pred;
+					}
+				}
+
+				sumX += obs;
+				sumY += pred;
+				sumX2 += obs * obs;
+				sumY2 += pred * pred;
+				sumXY += obs * pred;
+			}
+
+			double amplitudeFit = 1.0 - pow((maxObs - maxPred) / (maxObs + maxPred), 2.0);
+			// Pearson correlation coefficient
+			// Ref: https://en.wikipedia.org/wiki/Pearson_correlation_coefficient
+			double corr = max(0.0, count * sumXY - sumX * sumY / sqrt(count * sumX2 - sumX * sumX) / sqrt(count * sumY2 - sumY * sumY));
+			double SGF = sqrt(corr * amplitudeFit);
+
+			cerr << sid << "  " << SGF << endl;
 		}
-
-		auto buffer = it->second.get();
-
-		cerr << sid << ": " << buffer->size() << endl;
 	}
+
+	// Analyze all gofs
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 

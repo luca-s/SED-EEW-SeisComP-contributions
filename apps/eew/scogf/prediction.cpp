@@ -24,13 +24,16 @@
  ******************************************************************************/
 
 
+#define SEISCOMP_COMPONENT eew/scogf/prediction
+
+#include <seiscomp/logging/log.h>
 #include <seiscomp/core/strings.h>
-#include <filesystem>
 #include <fstream>
 #include <stdexcept>
 #include <sstream>
 
 #include "prediction.h"
+#include "npy.h"
 
 
 using namespace std;
@@ -73,7 +76,8 @@ void Prediction::setSource(const std::string &source) {
 		throw runtime_error(source + ": path does not exist");
 	}
 
-	if ( !fs::exists(p / "envelopes") ) {
+	_envelopePath = p / "envelopes";
+	if ( !fs::exists(_envelopePath) ) {
 		throw runtime_error(source + "/envelope: path does not exist");
 	}
 
@@ -243,12 +247,138 @@ void Prediction::setSource(const std::string &source) {
 			}
 		}
 
+		vector<string> toks;
+		if ( split(toks, cols[0], ".", false) != 4 ) {
+			throw runtime_error(stringify("station-config.csv:%d: expected 4 NSLC tokens, got %d",
+			                              lineNumber, toks.size()));
+		}
+
+		cols[0] = toks[0] + "." + toks[1] + "." + toks[2];
+
 		auto &binding = _bindings[cols[0]];
 		binding.soilClass = cols[1];
 		binding.amplification = values[2];
 	}
 
 	ifs.close();
+}
+// <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+
+
+// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+void Prediction::setDefaultSoilClass(const string &defaultSoilClass) {
+	_defaultSoilClass = defaultSoilClass;
+}
+// <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+
+
+// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Seiscomp::Array *Prediction::trace(const std::string &soilClass, double mag, double dist) {
+	int imag = mag * 10;
+	string pmag = imag % 10 == 0
+		?
+		toString(imag / 10)
+		:
+		toString(imag / 10) + "." + toString(imag % 10)
+	;
+
+	// TODO: Option to implement a cache in the future.
+	return loadNpy(
+		_envelopePath / soilClass / pmag / toString(static_cast<int>(dist)) / "V_H.npy"
+	);
+}
+// <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+
+
+// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Seiscomp::Array *Prediction::get(const string &streamID, double mag, double dist) {
+	auto it = _bindings.find(streamID);
+	if ( it == _bindings.end() ) {
+		if ( _defaultSoilClass.empty() ) {
+			return nullptr;
+		}
+
+		return trace(_defaultSoilClass, mag, dist);
+	}
+	else {
+		if ( it->second.soilClass.empty() && _defaultSoilClass.empty() ) {
+			return nullptr;
+		}
+
+		return trace(it->second.soilClass, mag, dist);
+	}
+}
+// <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+
+
+// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+double Prediction::pgv(const Seiscomp::DataModel::Origin *org,
+                       double mag, double dist) const {
+	for ( const auto &f : _zones.features() ) {
+		if ( f->contains({ org->latitude().value(), org->longitude().value() }) ) {
+			SEISCOMP_DEBUG("%s: determined zone: %s", org->publicID(), f->name());
+
+			auto it = _gmm.find(f->name());
+			if ( it == _gmm.end() ) {
+				SEISCOMP_DEBUG("%s: no zone predictions found", org->publicID());
+				break;
+			}
+
+			const auto &magnitudes = it->second;
+			auto mit = magnitudes.lower_bound(mag);
+			if ( mit == magnitudes.end() ) {
+				SEISCOMP_DEBUG("%s: magnitude out of range: %f", org->publicID(), mag);
+				break;
+			}
+
+			if ( mit->first > mag ) {
+				if ( mit != magnitudes.begin() ) {
+					--mit;
+				}
+			}
+
+			const auto &distances = mit->second;
+			auto dit = distances.lower_bound(dist);
+			if ( dit == distances.end() ) {
+				SEISCOMP_DEBUG("%s: distance out of range: %f", org->publicID(), dist);
+				break;
+			}
+
+			if ( dit->first > dist ) {
+				if ( dit != distances.begin() ) {
+					--dit;
+				}
+			}
+
+			SEISCOMP_DEBUG("%s: scaling: %s, %f, %f = %f", org->publicID(), f->name(),
+			               mag, dist, dit->second);
+			return dit->second;
+		}
+	}
+
+	throw runtime_error("no zone for origin");
+}
+// <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+
+
+// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+double Prediction::amplification(const std::string &streamID) const {
+	auto it = _bindings.find(streamID);
+	if ( it == _bindings.end() ) {
+		return 1.0;
+	}
+
+	return it->second.amplification;
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 

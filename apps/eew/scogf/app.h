@@ -187,7 +187,7 @@ class App : public Seiscomp::Client::Application {
 			double                   maximumDistance{5};
 			size_t                   minimumStations{0};
 			double                   preArrivalTimeWindow{0};
-			double                   postArrivalTimeShare{150};
+			double                   postArrivalTimeShare{1.5};
 			std::string              predictionArchivePath{"@DATADIR@/scogf"};
 			std::string              commentID{"eew.ogf"};
 			std::string              recordStreamURL;

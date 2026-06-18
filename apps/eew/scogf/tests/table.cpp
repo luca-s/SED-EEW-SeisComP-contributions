@@ -53,44 +53,44 @@ BOOST_AUTO_TEST_CASE(assoc) {
 
 	Association *assoc;
 
-	assoc = table.insert("AB.STA1", org1.get());
+	assoc = table.insert(org1.get(), "AB.STA1");
 	assoc->ttP = 1.1;
 	assoc->ttS = 1.2;
 	assoc->correlation = 1.1;
 	BOOST_CHECK_EQUAL(table.count("AB.STA1"), 1);
 
-	assoc = table.insert("AB.STA2", org1.get());
+	assoc = table.insert(org1.get(), "AB.STA2");
 	assoc->ttP = 2.1;
 	assoc->ttS = 2.2;
 	assoc->correlation = 2.1;
 	BOOST_CHECK_EQUAL(table.count("AB.STA2"), 1);
 
-	assoc = table.insert("AB.STA3", org1.get());
+	assoc = table.insert(org1.get(), "AB.STA3");
 	assoc->ttP = 3.1;
 	assoc->ttS = 3.2;
 	assoc->correlation = 3.1;
 	BOOST_CHECK_EQUAL(table.count("AB.STA3"), 1);
 	BOOST_CHECK_EQUAL(table.count(org1.get()), 3);
 
-	assoc = table.insert("AB.STA1", org2.get());
+	assoc = table.insert(org2.get(), "AB.STA1");
 	assoc->ttP = 1.1;
 	assoc->ttS = 1.2;
 	assoc->correlation = 1.2;
 	BOOST_CHECK_EQUAL(table.count("AB.STA1"), 2);
 
-	assoc = table.insert("AB.STA3", org2.get());
+	assoc = table.insert(org2.get(), "AB.STA3");
 	assoc->ttP = 3.1;
 	assoc->ttS = 3.2;
 	assoc->correlation = 3.2;
 	BOOST_CHECK_EQUAL(table.count("AB.STA3"), 2);
 
-	assoc = table.insert("AB.STA2", org3.get());
+	assoc = table.insert(org3.get(), "AB.STA2");
 	assoc->ttP = 2.1;
 	assoc->ttS = 2.2;
 	assoc->correlation = 2.3;
 	BOOST_CHECK_EQUAL(table.count("AB.STA2"), 2);
 
-	assoc = table.insert("AB.STA3", org3.get());
+	assoc = table.insert(org3.get(), "AB.STA3");
 	assoc->ttP = 3.1;
 	assoc->ttS = 3.2;
 	assoc->correlation = 3.3;

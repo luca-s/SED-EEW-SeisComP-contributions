@@ -29,8 +29,10 @@
 
 
 #include <seiscomp/core/typedarray.h>
+#include <seiscomp/datamodel/origin.h>
 #include <seiscomp/geo/featureset.h>
 
+#include <filesystem>
 #include <map>
 #include <vector>
 
@@ -65,6 +67,15 @@ class Prediction {
 		void setSource(const std::string &source);
 
 		/**
+		 * @brief Sets the default soil class.
+		 * If a trace for a streamID should be returned which is not part of the
+		 * bindings or has an empty soil class, this default will be used
+		 * instead.
+		 * @param defaultSoilClass Soil class name.
+		 */
+		void setDefaultSoilClass(const std::string &defaultSoilClass);
+
+		/**
 		 * @brief Returns the available gmpe zones.
 		 * @return A list of zone names.
 		 */
@@ -78,12 +89,35 @@ class Prediction {
 
 		/**
 		 * @brief Returns the predicted trace.
-		 * @param soilClass The soil class
-		 * @param mag The magnitude
-		 * @param dist The distance in kilometers
-		 * @return The data array of the trace
+		 * @param soilClass The soil class.
+		 * @param mag The magnitude.
+		 * @param dist The distance in kilometers.
+		 * @return The data array of the trace.
 		 */
-		Seiscomp::Array *trace(std::string_view soilClass, double mag, double dist);
+		Seiscomp::Array *trace(const std::string &soilClass, double mag, double dist);
+
+		/**
+		 * @brief Returns the predicted trace for a streamID.
+		 * This method resolves the channel bindings to get the corresponding
+		 * soil class and calls trace().
+		 * @param streamID The NSLC streamID.
+		 * @param mag The magnitude.
+		 * @param dist The distance in kilometers.
+		 * @return The data array of the trace.
+		 */
+		Seiscomp::Array *get(const std::string &streamID, double mag, double dist);
+
+		/**
+		 * @brief Returns the predicted PGV.
+		 * This method throws an exception if no pgv can be looked up.
+		 * @param org The origin.
+		 * @param mag The magnitude.
+		 * @param dist The distance in kilometers.
+		 * @return The PGV value.
+		 */
+		double pgv(const Seiscomp::DataModel::Origin *org, double mag, double dist) const;
+
+		double amplification(const std::string &streamID) const;
 
 
 	// ----------------------------------------------------------------------
@@ -100,6 +134,8 @@ class Prediction {
 		};
 		using ChannelBindings = std::map<std::string, ChannelBinding>;
 
+		std::filesystem::path        _envelopePath;
+		std::string                  _defaultSoilClass;
 		std::vector<std::string>     _zoneNames;
 		std::vector<std::string>     _soilClasses;
 		Seiscomp::Geo::GeoFeatureSet _zones;

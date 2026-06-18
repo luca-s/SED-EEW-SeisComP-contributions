@@ -44,6 +44,7 @@ struct Evaluation {
 
 
 struct Association {
+	double               dist{-1};
 	double               ttP{-1}; //!< P travel time w.r.t. origin time
 	double               ttS{-1}; //!< S travel time w.r.t. origin time
 	Seiscomp::Core::Time endTime; //!< Envelope end time for correlation computation
@@ -78,11 +79,14 @@ class AssociationTable {
 		//! Registers an origin and returns its evaluation object.
 		Evaluation *insert(ObjectType);
 
-		Association *insert(const std::string &, ObjectType);
+		Association *insert(ObjectType, const std::string &);
 		size_t remove(ObjectType);
 
 		//! Returns if an association exists
 		bool isAssociated(ObjectType, const std::string &) const;
+
+		const Association *assoc(ObjectType, const std::string &) const;
+		Association *assoc(ObjectType, const std::string &);
 
 		//! Returns the evaluation for a particular origin.
 		Evaluation *get(ObjectType);
@@ -138,6 +142,22 @@ inline size_t AssociationTable::count(const std::string &sid) const {
 inline bool AssociationTable::isAssociated(ObjectType org,
                                            const std::string &sid) const {
 	return _assoc.find({ org, sid }) != _assoc.end();
+}
+
+inline const Association *AssociationTable::assoc(ObjectType org, const std::string &sid) const {
+	auto it = _assoc.find({ org, sid });
+	if ( it != _assoc.end() ) {
+		return &it->second;
+	}
+	return nullptr;
+}
+
+inline Association *AssociationTable::assoc(ObjectType org, const std::string &sid) {
+	auto it = _assoc.find({ org, sid });
+	if ( it != _assoc.end() ) {
+		return &it->second;
+	}
+	return nullptr;
 }
 
 inline AssociationTable::RangeWrapper<AssociationTable::EvaluationContainer>

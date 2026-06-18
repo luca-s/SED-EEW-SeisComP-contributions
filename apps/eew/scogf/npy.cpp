@@ -26,6 +26,7 @@
 
 #include <seiscomp/core/endianess.h>
 #include <seiscomp/core/strings.h>
+
 #include <fstream>
 #include <stdexcept>
 
@@ -39,10 +40,20 @@ using namespace Seiscomp;
 namespace EEW::OGF {
 
 
+Seiscomp::Array *loadNpy(const char *filename) {
+	return loadNpy(filesystem::path(filename));
+}
+
+
 Seiscomp::Array *loadNpy(const string &filename) {
-	ifstream ifs(filename);
+	return loadNpy(filesystem::path(filename));
+}
+
+
+Seiscomp::Array *loadNpy(const filesystem::path &path) {
+	ifstream ifs(path);
 	if ( !ifs.is_open() ) {
-		throw runtime_error(filename + " not found");
+		throw runtime_error(string(path) + " not found");
 	}
 
 	char buffer[16];
