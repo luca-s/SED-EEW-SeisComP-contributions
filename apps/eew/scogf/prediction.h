@@ -29,6 +29,10 @@
 
 
 #include <seiscomp/core/typedarray.h>
+#include <seiscomp/geo/featureset.h>
+
+#include <map>
+#include <vector>
 
 
 namespace EEW::OGF {
@@ -72,18 +76,40 @@ class Prediction {
 		 */
 		const std::vector<std::string> &soilClasses() const;
 
+		/**
+		 * @brief Returns the predicted trace.
+		 * @param soilClass The soil class
+		 * @param mag The magnitude
+		 * @param dist The distance in kilometers
+		 * @return The data array of the trace
+		 */
+		Seiscomp::Array *trace(std::string_view soilClass, double mag, double dist);
+
 
 	// ----------------------------------------------------------------------
 	//  Private members
 	// ----------------------------------------------------------------------
 	private:
-		std::vector<std::string> _zones;
-		std::vector<std::string> _soilClasses;
+		using DistanceMap = std::map<double, double>;
+		using MagnitudeMap = std::map<double, DistanceMap>;
+		using GMM = std::map<std::string, MagnitudeMap>;
+
+		struct ChannelBinding {
+			std::string soilClass;
+			double      amplification;
+		};
+		using ChannelBindings = std::map<std::string, ChannelBinding>;
+
+		std::vector<std::string>     _zoneNames;
+		std::vector<std::string>     _soilClasses;
+		Seiscomp::Geo::GeoFeatureSet _zones;
+		GMM                          _gmm;
+		ChannelBindings              _bindings;
 };
 
 
 inline const std::vector<std::string> &Prediction::zones() const {
-	return _zones;
+	return _zoneNames;
 }
 
 inline const std::vector<std::string> &Prediction::soilClasses() const {

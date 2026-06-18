@@ -78,6 +78,7 @@ App::App(int argc, char **argv) : Application(argc, argv) {
 	addMessagingSubscription("AMPLITUDE");
 	addMessagingSubscription("LOCATION");
 	addMessagingSubscription("MAGNITUDE");
+	setLoadStationsEnabled(true);
 	bindSettings(&_settings);
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
@@ -99,6 +100,10 @@ bool App::validateParameters() {
 
 		if ( !_settings.epFile.empty() ) {
 			setMessagingEnabled(false);
+		}
+
+		if ( !isInventoryDatabaseEnabled() ) {
+			setDatabaseEnabled(false, false);
 		}
 	}
 
@@ -129,16 +134,8 @@ bool App::init() {
 		return false;
 	}
 
-	if ( !_settings.zoneFile.empty() ) {
-		if ( _zones.readFile(_settings.zoneFile, nullptr) < 0 ) {
-			SEISCOMP_ERROR("%s: failed to read zones", _settings.zoneFile);
-			return false;
-		}
-	}
-
 	SEISCOMP_DEBUG("Available envelope soil classes: %s", Core::join(_prediction.soilClasses(), ", "));
 	SEISCOMP_DEBUG("Available gmpe zones: %s", Core::join(_prediction.zones(), ", "));
-	SEISCOMP_DEBUG("Configured zones: %d", _zones.features().size());
 
 	_cache.setDatabaseArchive(query());
 	_cache.setTimeSpan(_settings.cacheSize);
@@ -168,12 +165,15 @@ bool App::init() {
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 bool App::run() {
 	if ( !_settings.epFile.empty() ) {
+		SEISCOMP_DEBUG("Reading envelopes from %s", _settings.recordStreamURL);
+
 		IO::RecordStreamPtr rs = IO::RecordStream::Open(_settings.recordStreamURL.data());
 		if ( !rs ) {
 			SEISCOMP_ERROR("%s: failed to open recordstream", _settings.recordStreamURL);
 			return false;
 		}
 
+		SEISCOMP_DEBUG("Reading event parameters from %s", _settings.epFile);
 		IO::XMLArchive ar;
 		if ( !ar.open(_settings.epFile.data()) ) {
 			SEISCOMP_ERROR("%s: failed to open XML file", _settings.epFile);
@@ -190,6 +190,8 @@ bool App::run() {
 		}
 
 		for ( size_t i = 0; i < ep->originCount(); ++i ) {
+			SEISCOMP_DEBUG("Processing origin %s", ep->origin(i)->publicID());
+			addAssociations(ep->origin(i));
 			process(ep->origin(i), rs.get());
 		}
 
@@ -211,6 +213,7 @@ bool App::run() {
 			return false;
 		}
 
+		addAssociations(org.get());
 		process(org.get(), rs.get());
 		return true;
 	}
@@ -333,6 +336,7 @@ void App::handleMessage(Seiscomp::Core::Message *msg) {
 				}
 				else {
 					buffer = it->second.get();
+					// TODO: Check if eval->dirty has to be set as well.
 				}
 
 				buffer->append({
@@ -478,6 +482,14 @@ void App::process(Seiscomp::DataModel::Origin *org, IO::RecordStream *rs) {
 	_envelopeBuffers.clear();
 
 	while ( RecordPtr rec = rs->next() ) {
+		if ( rec->channelCode().empty() || (rec->channelCode().size() != 3) ) {
+			continue;
+		}
+
+		if ( (rec->channelCode()[1] != 'H') || (rec->channelCode()[2] != 'X') ) {
+			continue;
+		}
+
 		auto sid = join(".", rec->networkCode(), rec->stationCode(), rec->locationCode());
 		if ( _slocFirewall.isDenied(sid) ) {
 			SEISCOMP_WARNING("%s: location is denied due to configuration", sid);
@@ -494,7 +506,8 @@ void App::process(Seiscomp::DataModel::Origin *org, IO::RecordStream *rs) {
 			                                   rec->locationCode(),
 			                                   rec->startTime());
 			if ( !sloc ) {
-				SEISCOMP_WARNING("%s: no inventory information", sid);
+				SEISCOMP_WARNING("%s: no inventory information for epoch at %s",
+				                 sid, rec->startTime().iso());
 				continue;
 			}
 
@@ -511,7 +524,7 @@ void App::process(Seiscomp::DataModel::Origin *org, IO::RecordStream *rs) {
 					catch ( ... ) {}
 				}
 
-				buffer = new EnvelopeBuffer(numeric_limits<EnvelopeBuffer::size_type>::max());
+				buffer = new EnvelopeBuffer(_settings.envelopes.bufferSize);
 				buffer->lat = loc.lat;
 				buffer->lon = loc.lon;
 				buffer->elev = elev;
@@ -547,6 +560,21 @@ void App::process(Seiscomp::DataModel::Origin *org, IO::RecordStream *rs) {
 		buffer->dirty = true;
 	}
 
+	size_t newLimit = 0;
+	for ( const auto &[sid, buffer] : _envelopeBuffers ) {
+		SEISCOMP_DEBUG("%s: registered %d/%d envelopes",
+		               sid, buffer->size(), buffer->appended());
+		if ( (buffer->appended() > buffer->size()) && (buffer->appended() > newLimit) ) {
+			newLimit = buffer->appended();
+		}
+	}
+
+	if ( newLimit > 0 ) {
+		SEISCOMP_WARNING("envelopes.bufferSize = %d is not large enough to hold all read "
+		                 "envelopes, consider increasing it to at least %d",
+		                 _settings.envelopes.bufferSize, newLimit);
+	}
+
 	Evaluation eval;
 	process(org, eval);
 
@@ -577,7 +605,17 @@ void App::process(Seiscomp::DataModel::Origin *org, IO::RecordStream *rs) {
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 void App::process(Seiscomp::DataModel::Origin *org, Evaluation &eval) {
-	// TODO: Do computations
+	// Do not check the eval.dirty flag as this has been done already
+	for ( const auto &[org, sid] : _associationTable.sensors(org) ) {
+		auto it = _envelopeBuffers.find(sid);
+		if ( it == _envelopeBuffers.end() ) {
+			continue;
+		}
+
+		auto buffer = it->second.get();
+
+		cerr << sid << ": " << buffer->size() << endl;
+	}
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 

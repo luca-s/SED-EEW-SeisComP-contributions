@@ -89,13 +89,19 @@ class App : public Seiscomp::Client::Application {
 				void append(const Envelope &env) {
 					// TODO: Check overlaps and out-of-order
 					push_back(env);
+					++_appends;
 				}
+
+				size_t appended() const { return _appends; }
 
 			public:
 				double lat;
 				double lon;
 				double elev;
 				bool   dirty;
+
+			private:
+				size_t _appends{0};
 		};
 
 		Association *addAssociation(Seiscomp::DataModel::Origin *org,
@@ -124,7 +130,6 @@ class App : public Seiscomp::Client::Application {
 				& cfg(preArrivalTimeWindow, "preArrivalTimeWindow")
 				& cfg(postArrivalTimeShare, "postArrivalTimeShare")
 				& cfg(predictionArchivePath, "predictionArchivePath")
-				& cfg(zoneFile, "zoneFile")
 				& cfg(commentID, "commentID")
 				& cfg(envelopes, "envelopes")
 				& cfg(sensorLocations, "sensorLocations")
@@ -184,7 +189,6 @@ class App : public Seiscomp::Client::Application {
 			double                   preArrivalTimeWindow{0};
 			double                   postArrivalTimeShare{150};
 			std::string              predictionArchivePath{"@DATADIR@/scogf"};
-			std::string              zoneFile;
 			std::string              commentID{"eew.ogf"};
 			std::string              recordStreamURL;
 			std::string              epFile;
