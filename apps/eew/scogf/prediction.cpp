@@ -358,7 +358,7 @@ double Prediction::pgv(const Seiscomp::DataModel::Origin *org,
 				}
 			}
 
-			SEISCOMP_DEBUG("%s: scaling: %s, %f, %f = %f", org->publicID(), f->name(),
+			SEISCOMP_DEBUG("%s: pgv: %s, %f, %f = %f", org->publicID(), f->name(),
 			               mag, dist, dit->second);
 			return dit->second;
 		}

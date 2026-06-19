@@ -37,6 +37,7 @@
 #include <seiscomp/datamodel/vs/envelopevalue.h>
 #include <seiscomp/io/archive/xmlarchive.h>
 #include <seiscomp/math/geo.h>
+#include <seiscomp/math/mean.h>
 #include <seiscomp/utils/misc.h>
 
 #include <filesystem>
@@ -48,6 +49,7 @@
 
 using namespace std;
 using namespace Seiscomp;
+using namespace Seiscomp::Core;
 using namespace Seiscomp::DataModel;
 
 
@@ -63,7 +65,7 @@ namespace {
 
 template<typename T, typename... Args>
 string join(const string &link, T head, Args... args) {
-	return Core::toString(head) + (... + (link + Core::toString(args)));
+	return toString(head) + (... + (link + toString(args)));
 }
 
 
@@ -593,7 +595,7 @@ void App::process(Seiscomp::DataModel::Origin *org, IO::RecordStream *rs) {
 			org->update();
 		}
 
-		cmt->setText(Core::toString(eval.gof));
+		cmt->setText(toString(eval.gof));
 		cmt->update();
 	}
 	else if ( cmt ) {
@@ -650,8 +652,10 @@ void App::process(Seiscomp::DataModel::Origin *org, Evaluation &eval) {
 			}
 
 			double scale = 1.0;
+			double pgv = 1.0;
 			try {
-				scale = _prediction.pgv(org, mag->magnitude().value(), assoc->dist);
+				pgv = _prediction.pgv(org, mag->magnitude().value(), assoc->dist);
+				scale = pgv;
 			}
 			catch ( ... ) {}
 
@@ -660,7 +664,8 @@ void App::process(Seiscomp::DataModel::Origin *org, Evaluation &eval) {
 				pred = static_cast<DoubleArray*>(array->copy(Array::DOUBLE));
 			}
 
-			scale /= pred->max();
+			auto predMax = pred->max();
+			scale /= predMax;
 
 			double amplification = _prediction.amplification(sid);
 			scale *= amplification;
@@ -693,16 +698,27 @@ void App::process(Seiscomp::DataModel::Origin *org, Evaluation &eval) {
 
 			// Move buffer to start index
 			auto bit = buffer->begin();
-			for ( int i = 0; i < idx0; ++i ) {
+			int idx0Obs = (org->time().value() + TimeSpan(startTime) - bit->timestamp).seconds();
+			for ( int i = 0; i < idx0Obs; ++i ) {
 				++bit;
 			}
 
-			double maxObs, maxPred;
-			double sumX{0}, sumY{0}, sumX2{0}, sumY2{0}, sumXY{0};
+			auto bitSave = bit;
 
-			for ( int i = 0; i < count; ++i, ++bit, ++dataPred ) {
+			double maxObs, maxPred;
+
+			#if DUMP_DATA
+			ofstream ofs;
+			ofs.open(sid + ".csv");
+			#endif
+
+			for ( int i = 0; i < count; ++i, ++bit ) {
 				auto obs = bit->value;
-				auto pred = *dataPred;
+				auto pred = dataPred[i] * scale;
+
+				#if DUMP_DATA
+				ofs << obs << "\t" << pred << "\n";
+				#endif
 
 				if ( !i ) {
 					maxObs = obs;
@@ -716,6 +732,20 @@ void App::process(Seiscomp::DataModel::Origin *org, Evaluation &eval) {
 						maxPred = pred;
 					}
 				}
+			}
+
+			#if DUMP_DATA
+			ofs.close();
+			#endif
+
+			bit = bitSave;
+
+			double numericScale = 1.0 / maxPred;
+			double sumX{0}, sumY{0}, sumX2{0}, sumY2{0}, sumXY{0};
+
+			for ( int i = 0; i < count; ++i, ++bit ) {
+				auto obs = bit->value * numericScale;
+				auto pred = dataPred[i] * scale * numericScale;
 
 				sumX += obs;
 				sumY += pred;
@@ -727,11 +757,25 @@ void App::process(Seiscomp::DataModel::Origin *org, Evaluation &eval) {
 			double amplitudeFit = 1.0 - pow((maxObs - maxPred) / (maxObs + maxPred), 2.0);
 			// Pearson correlation coefficient
 			// Ref: https://en.wikipedia.org/wiki/Pearson_correlation_coefficient
-			double corr = max(0.0, count * sumXY - sumX * sumY / sqrt(count * sumX2 - sumX * sumX) / sqrt(count * sumY2 - sumY * sumY));
+			double corr = max(0.0, (count * sumXY - sumX * sumY) / sqrt(count * sumX2 - sumX * sumX) / sqrt(count * sumY2 - sumY * sumY));
 			double SGF = sqrt(corr * amplitudeFit);
 
-			cerr << sid << "  " << SGF << endl;
+			/*
+			cerr << toString(sumX) << " " << toString(sumX2) << " " << toString(sumY)
+			     << " " << toString(sumY2) << " " << toString(sumXY) << endl;
+			*/
+
+			SEISCOMP_DEBUG("%s: [%d(%d):%d#%d] dist=%f, mag=%f, gMaxPred=%f, "
+			               "scale=pgv(%f)*amplification(%f)/max(%f)=%f, maxObs=%f, maxPred=%f, "
+			               "ampFit=%f, corr=%f, SGF=%f",
+			               sid, idx0, idx0Obs, idx1, count, assoc->dist, mag->magnitude().value(),
+			               predMax, pgv, amplification, predMax, scale,
+			               maxObs, maxPred, amplitudeFit, corr, SGF);
+
+			gofs.push_back(SGF);
 		}
+
+		SEISCOMP_DEBUG("%s: GOF=%f", org->publicID(), Math::Statistics::mean(gofs) * 100);
 	}
 
 	// Analyze all gofs
