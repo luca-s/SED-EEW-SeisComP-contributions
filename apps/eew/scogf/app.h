@@ -131,6 +131,7 @@ class App : public Seiscomp::Client::Application {
 				& cfg(postArrivalTimeShare, "postArrivalTimeShare")
 				& cfg(predictionArchivePath, "predictionArchivePath")
 				& cfg(commentID, "commentID")
+				& cfg(commentMagID, "commentMagID")
 				& cfg(envelopes, "envelopes")
 				& cfg(sensorLocations, "sensorLocations")
 				& cli(recordStreamURL, "Input", "record-url,I",
