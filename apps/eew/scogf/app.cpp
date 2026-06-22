@@ -53,6 +53,9 @@ using namespace Seiscomp::Core;
 using namespace Seiscomp::DataModel;
 
 
+#define DUMP_DATA 1
+
+
 namespace EEW::OGF {
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
@@ -199,6 +202,11 @@ bool App::run() {
 			addAssociations(ep->origin(i));
 			process(ep->origin(i), rs.get());
 		}
+
+		ar.create("-");
+		ar.setFormattedOutput(_settings.formatted);
+		ar << ep;
+		ar.close();
 
 		return true;
 	}
@@ -603,6 +611,26 @@ void App::process(Seiscomp::DataModel::Origin *org, IO::RecordStream *rs) {
 		touch(org);
 		org->update();
 	}
+
+	cmt = org->comment(_settings.commentMagID);
+
+	if ( !eval.bestMagnitude.empty() ) {
+		if ( !cmt ) {
+			cmt = new Comment;
+			cmt->setId(_settings.commentMagID);
+			org->add(cmt);
+			touch(org);
+			org->update();
+		}
+
+		cmt->setText(eval.bestMagnitude);
+		cmt->update();
+	}
+	else if ( cmt ) {
+		org->remove(cmt);
+		touch(org);
+		org->update();
+	}
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
@@ -612,6 +640,9 @@ void App::process(Seiscomp::DataModel::Origin *org, IO::RecordStream *rs) {
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 void App::process(Seiscomp::DataModel::Origin *org, Evaluation &eval) {
 	size_t magCount = org->magnitudeCount();
+
+	eval.bestMagnitude = {};
+	eval.gof = -1;
 
 	for ( size_t i = 0; i < magCount; ++i ) {
 		auto mag = org->magnitude(i);
@@ -775,10 +806,13 @@ void App::process(Seiscomp::DataModel::Origin *org, Evaluation &eval) {
 			gofs.push_back(SGF);
 		}
 
-		SEISCOMP_DEBUG("%s: GOF=%f", org->publicID(), Math::Statistics::mean(gofs) * 100);
+		auto gof = Math::Statistics::mean(gofs) * 100;
+		SEISCOMP_DEBUG("%s: GOF=%f", org->publicID(), gof);
+		if ( gof > eval.gof ) {
+			eval.gof = gof;
+			eval.bestMagnitude = mag->type();
+		}
 	}
-
-	// Analyze all gofs
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 

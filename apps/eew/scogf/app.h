@@ -150,6 +150,8 @@ class App : public Seiscomp::Client::Application {
 				)
 				& cli(originID, "Input", "origin-id,O",
 					"OriginID to be processed. ")
+				& cliSwitch(formatted, "Output", "formatted,f",
+					"Use formatted XML output. Otherwise XML is unformatted.")
 				& cliSwitch(dump, "Mode", "dump",
 					"Dump results as XML rather than sending messages."
 				)
@@ -189,9 +191,11 @@ class App : public Seiscomp::Client::Application {
 			double                   preArrivalTimeWindow{0};
 			double                   postArrivalTimeShare{1.5};
 			std::string              predictionArchivePath{"@DATADIR@/scogf"};
-			std::string              commentID{"eew.ogf"};
+			std::string              commentID{"eew.ogf.value"};
+			std::string              commentMagID{"eew.ogf.mag"};
 			std::string              recordStreamURL;
 			std::string              epFile;
+			bool                     formatted{false};
 			std::string              originID;
 			bool                     dump{false};
 		} _settings;

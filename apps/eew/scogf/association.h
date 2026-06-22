@@ -38,6 +38,7 @@ namespace EEW::OGF {
 
 struct Evaluation {
 	double               gof{-1}; //!< Current goodness of fit
+	std::string          bestMagnitude; //!< The magnitude which caused the highest fit
 	bool                 dirty{false}; //!< Dirty flag, e.g. association has changed
 	Seiscomp::Core::Time eol; //!< Maximum time to live => end of lifetime
 };
