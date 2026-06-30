@@ -53,7 +53,7 @@ using namespace Seiscomp::Core;
 using namespace Seiscomp::DataModel;
 
 
-#define DUMP_DATA 1
+#define DUMP_DATA 0
 
 
 namespace EEW::OGF {
@@ -173,6 +173,8 @@ bool App::init() {
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 bool App::run() {
 	if ( !_settings.epFile.empty() ) {
+		Notifier::Disable();
+
 		SEISCOMP_DEBUG("Reading envelopes from %s", _settings.recordStreamURL);
 
 		IO::RecordStreamPtr rs = IO::RecordStream::Open(_settings.recordStreamURL.data());
@@ -262,7 +264,6 @@ void App::handleTimeout() {
 		}
 
 		process(org, eval);
-		eval.dirty = false;
 	}
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
@@ -271,7 +272,7 @@ void App::handleTimeout() {
 
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-void App::handleMessage(Seiscomp::Core::Message *msg) {
+void App::handleMessage(Message *msg) {
 	// This causes callbacks (addObject, updateObject) to be called
 	// when messages arrive
 	Application::handleMessage(msg);
@@ -368,7 +369,7 @@ void App::handleMessage(Seiscomp::Core::Message *msg) {
 
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-void App::addObject(const std::string &, Seiscomp::DataModel::Object *obj) {
+void App::addObject(const std::string &, Object *obj) {
 	auto org = DataModel::Origin::Cast(obj);
 	if ( org ) {
 		addAssociations(org);
@@ -380,7 +381,7 @@ void App::addObject(const std::string &, Seiscomp::DataModel::Object *obj) {
 
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-void App::removeObject(const std::string &, Seiscomp::DataModel::Object *obj) {
+void App::removeObject(const std::string &, Object *obj) {
 	auto org = DataModel::Origin::Cast(obj);
 	if ( org ) {
 		_cache.remove(org);
@@ -392,7 +393,7 @@ void App::removeObject(const std::string &, Seiscomp::DataModel::Object *obj) {
 
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-void App::updateObject(const std::string &, Seiscomp::DataModel::Object *obj) {
+void App::updateObject(const std::string &, Object *obj) {
 	//
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
@@ -401,7 +402,7 @@ void App::updateObject(const std::string &, Seiscomp::DataModel::Object *obj) {
 
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-Association *App::addAssociation(Seiscomp::DataModel::Origin *org,
+Association *App::addAssociation(Origin *org,
                                  const std::string &sid, const EnvelopeBuffer &buffer) {
 	double dist;
 	Math::Geo::delazi(org->latitude().value(), org->longitude().value(),
@@ -465,7 +466,7 @@ void App::addAssociations(const std::string &sid, const EnvelopeBuffer &buffer) 
 
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-void App::addAssociations(Seiscomp::DataModel::Origin *org) {
+void App::addAssociations(Origin *org) {
 	auto *eval = _associationTable.insert(org);
 	eval->eol = org->time().value() + _settings.envelopes.maxDelay;
 
@@ -492,7 +493,7 @@ void App::addAssociations(Seiscomp::DataModel::Origin *org) {
 
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-void App::process(Seiscomp::DataModel::Origin *org, IO::RecordStream *rs) {
+void App::process(Origin *org, IO::RecordStream *rs) {
 	if ( rs ) {
 		_envelopeBuffers.clear();
 
@@ -593,6 +594,96 @@ void App::process(Seiscomp::DataModel::Origin *org, IO::RecordStream *rs) {
 
 	Evaluation eval;
 	process(org, eval);
+}
+// <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+
+
+// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+void App::process(Origin *org, Evaluation &eval) {
+	eval.bestMagnitude = {};
+	eval.gof = -1;
+
+	if ( _settings.envelopeMagnitude.enable ) {
+		OPT(double) envMagGOF;
+		double envMagValue;
+		int stationCount, envMagStationCount;
+
+		for ( double m = _settings.envelopeMagnitude.minimum;
+		      m < _settings.envelopeMagnitude.maximum;
+		      m += _settings.envelopeMagnitude.spacing ) {
+			auto gof = compute(org, m, &stationCount);
+			if ( !envMagGOF || (*envMagGOF < gof) ) {
+				envMagGOF = gof;
+				envMagValue = m;
+				envMagStationCount = stationCount;
+			}
+		}
+
+		if ( envMagGOF ) {
+			Magnitude *envMag = nullptr;
+
+			for ( size_t i = 0; i < org->magnitudeCount(); ++i ) {
+				auto mag = org->magnitude(i);
+				if ( _settings.envelopeMagnitude.type == mag->type() ) {
+					envMag = mag;
+					break;
+				}
+			}
+
+			if ( !envMag ) {
+				envMag = Magnitude::Create();
+				envMag->setType(_settings.envelopeMagnitude.type);
+				envMag->setStationCount(envMagStationCount);
+				org->add(envMag);
+			}
+			else {
+				envMag->update();
+			}
+
+			envMag->setMagnitude(RealQuantity(envMagValue));
+			touch(envMag);
+
+			auto cmt = envMag->comment(_settings.commentID);
+
+			if ( !cmt ) {
+				cmt = new Comment;
+				cmt->setId(_settings.commentID);
+				envMag->add(cmt);
+				touch(envMag);
+				envMag->update();
+			}
+
+			cmt->setText(toString(*envMagGOF));
+			cmt->update();
+
+			eval.gof = *envMagGOF;
+			eval.bestMagnitude = envMag->publicID();
+
+			SEISCOMP_DEBUG("%s/%s: M=%f, GOF=%f", org->publicID(), envMag->type(),
+			               envMag->magnitude().value(), *envMagGOF);
+		}
+	}
+
+	for ( size_t i = 0; i < org->magnitudeCount(); ++i ) {
+		auto mag = org->magnitude(i);
+		if ( _settings.envelopeMagnitude.enable
+		  && (mag->type() == _settings.envelopeMagnitude.type) ) {
+			continue;
+		}
+
+		auto gof = compute(org, mag);
+		if ( gof > eval.gof ) {
+			eval.gof = gof;
+			eval.bestMagnitude = mag->publicID();
+		}
+
+		SEISCOMP_DEBUG("%s/%s: GOF=%f", org->publicID(), mag->type(), gof);
+	}
+
+	SEISCOMP_DEBUG("%s: GOF=%f, best mag=%s", org->publicID(), eval.gof, eval.bestMagnitude);
+	eval.dirty = false;
 
 	auto cmt = org->comment(_settings.commentID);
 
@@ -640,194 +731,190 @@ void App::process(Seiscomp::DataModel::Origin *org, IO::RecordStream *rs) {
 
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-void App::process(Seiscomp::DataModel::Origin *org, Evaluation &eval) {
-	size_t magCount = org->magnitudeCount();
+double App::compute(Origin *org, const Magnitude *mag) {
+	SEISCOMP_DEBUG("Compute %s %s %s", org->publicID(), mag->publicID(), mag->type());
+	return compute(org, mag->magnitude().value());
+}
+// <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
-	eval.bestMagnitude = {};
-	eval.gof = -1;
 
-	for ( size_t i = 0; i < magCount; ++i ) {
-		auto mag = org->magnitude(i);
-		SEISCOMP_DEBUG("Compute %s/%s", org->publicID(), mag->type());
 
-		vector<double> gofs;
 
-		// Do not check the eval.dirty flag as this has been done already
-		for ( const auto &[org, sid] : _associationTable.sensors(org) ) {
-			auto it = _envelopeBuffers.find(sid);
-			if ( it == _envelopeBuffers.end() ) {
-				SEISCOMP_DEBUG("No envelope buffer");
-				continue;
-			}
+// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+double App::compute(Origin *org, double mag, int *stationCount) {
+	vector<double> gofs;
 
-			auto buffer = it->second.get();
-			if ( !buffer || buffer->empty() ) {
-				// No envelopes
-				SEISCOMP_DEBUG("No envelopes");
-				continue;
-			}
+	// Do not check the eval.dirty flag as this has been done already
+	for ( const auto &[org, sid] : _associationTable.sensors(org) ) {
+		auto it = _envelopeBuffers.find(sid);
+		if ( it == _envelopeBuffers.end() ) {
+			continue;
+		}
 
-			auto assoc = _associationTable.assoc(org, sid);
-			if ( !assoc ) {
-				// No association
-				SEISCOMP_DEBUG("No assoc");
-				continue;
-			}
+		auto buffer = it->second.get();
+		if ( !buffer || buffer->empty() ) {
+			// No envelopes
+			continue;
+		}
 
-			if ( !assoc->lastMag
-			  || !_prediction.equal(*assoc->lastMag, mag->magnitude().value()) ) {
-				// A dirty association requires a recomputation
-				ArrayPtr array;
-				try {
-					array = _prediction.get(sid, mag->magnitude().value(), assoc->dist);
-					if ( !array ) {
-						// No predictions
-						continue;
-					}
-				}
-				catch ( ... ) {
+		auto assoc = _associationTable.assoc(org, sid);
+		if ( !assoc ) {
+			// No association
+			continue;
+		}
+
+		if ( !assoc->lastMag
+		  || !_prediction.equal(*assoc->lastMag, mag) ) {
+			// A dirty association requires a recomputation
+			ArrayPtr array;
+			try {
+				array = _prediction.get(sid, mag, assoc->dist);
+				if ( !array ) {
 					// No predictions
 					continue;
 				}
+			}
+			catch ( ... ) {
+				// No predictions
+				continue;
+			}
 
-				double scale = 1.0;
-				double pgv = 1.0;
-				try {
-					pgv = _prediction.pgv(org, mag->magnitude().value(), assoc->dist);
-					scale = pgv;
-				}
-				catch ( ... ) {}
+			double scale = 1.0;
+			double pgv = 1.0;
+			try {
+				pgv = _prediction.pgv(org, mag, assoc->dist);
+				scale = pgv;
+			}
+			catch ( ... ) {}
 
-				DoubleArrayPtr pred = DoubleArray::Cast(array);
-				if ( !pred ) {
-					pred = static_cast<DoubleArray*>(array->copy(Array::DOUBLE));
-				}
+			DoubleArrayPtr pred = DoubleArray::Cast(array);
+			if ( !pred ) {
+				pred = static_cast<DoubleArray*>(array->copy(Array::DOUBLE));
+			}
 
-				auto predMax = pred->max();
-				scale /= predMax;
+			auto predMax = pred->max();
+			scale /= predMax;
 
-				double amplification = _prediction.amplification(sid);
-				scale *= amplification;
+			double amplification = _prediction.amplification(sid);
+			scale *= amplification;
 
-				// Desired time window (a)
-				double startTimeA = assoc->ttP - _settings.preArrivalTimeWindow;
-				double endTimeA = assoc->ttS * _settings.postArrivalTimeShare;
+			// Desired time window (a)
+			double startTimeA = assoc->ttP - _settings.preArrivalTimeWindow;
+			double endTimeA = assoc->ttS * _settings.postArrivalTimeShare;
 
-				// Time window of available template (b)
-				double startTimeB = 0;
-				double endTimeB = pred->size();
+			// Time window of available template (b)
+			double startTimeB = 0;
+			double endTimeB = pred->size();
 
-				// The time interval (the samples) covered by envelope values in the buffer (c)
-				double startTimeC = static_cast<double>(buffer->front().timestamp - org->time().value());
-				double endTimeC = static_cast<double>(buffer->back().timestamp - org->time().value()) + 1.0;
+			// The time interval (the samples) covered by envelope values in the buffer (c)
+			double startTimeC = static_cast<double>(buffer->front().timestamp - org->time().value());
+			double endTimeC = static_cast<double>(buffer->back().timestamp - org->time().value()) + 1.0;
 
-				double startTime = max(startTimeA, max(startTimeB, startTimeC));
-				double endTime = min(endTimeA, min(endTimeB, endTimeC));
+			double startTime = max(startTimeA, max(startTimeB, startTimeC));
+			double endTime = min(endTimeA, min(endTimeB, endTimeC));
 
-				int idx0 = static_cast<int>(startTime);
-				int idx1 = static_cast<int>(endTime);
+			int idx0 = static_cast<int>(startTime);
+			int idx1 = static_cast<int>(endTime);
 
-				if ( idx0 >= idx1 ) {
-					SEISCOMP_DEBUG("Empty correlation time window: %d:%d", idx0, idx1);
-					continue;
-				}
+			if ( idx0 >= idx1 ) {
+				SEISCOMP_DEBUG("Empty correlation time window: %d:%d", idx0, idx1);
+				continue;
+			}
 
-				int count = idx1 - idx0;
-				double *dataPred = pred->typedData() + idx0;
+			int count = idx1 - idx0;
+			double *dataPred = pred->typedData() + idx0;
 
-				// Move buffer to start index
-				auto bit = buffer->begin();
-				int idx0Obs = (org->time().value() + TimeSpan(startTime) - bit->timestamp).seconds();
-				for ( int i = 0; i < idx0Obs; ++i ) {
-					++bit;
-				}
+			// Move buffer to start index
+			auto bit = buffer->begin();
+			int idx0Obs = (org->time().value() + TimeSpan(startTime) - bit->timestamp).seconds();
+			for ( int i = 0; i < idx0Obs; ++i ) {
+				++bit;
+			}
 
-				auto bitSave = bit;
+			auto bitSave = bit;
 
-				double maxObs, maxPred;
+			double maxObs, maxPred;
+
+			#if DUMP_DATA
+			ofstream ofs;
+			ofs.open(sid + ".csv");
+			#endif
+
+			for ( int i = 0; i < count; ++i, ++bit ) {
+				auto obs = bit->value;
+				auto pred = dataPred[i] * scale;
 
 				#if DUMP_DATA
-				ofstream ofs;
-				ofs.open(sid + ".csv");
+				ofs << obs << "\t" << pred << "\n";
 				#endif
 
-				for ( int i = 0; i < count; ++i, ++bit ) {
-					auto obs = bit->value;
-					auto pred = dataPred[i] * scale;
-
-					#if DUMP_DATA
-					ofs << obs << "\t" << pred << "\n";
-					#endif
-
-					if ( !i ) {
+				if ( !i ) {
+					maxObs = obs;
+					maxPred = pred;
+				}
+				else {
+					if ( maxObs < obs ) {
 						maxObs = obs;
+					}
+					if  ( maxPred < pred ) {
 						maxPred = pred;
 					}
-					else {
-						if ( maxObs < obs ) {
-							maxObs = obs;
-						}
-						if  ( maxPred < pred ) {
-							maxPred = pred;
-						}
-					}
 				}
-
-				#if DUMP_DATA
-				ofs.close();
-				#endif
-
-				bit = bitSave;
-
-				double numericScale = 1.0 / maxPred;
-				double sumX{0}, sumY{0}, sumX2{0}, sumY2{0}, sumXY{0};
-
-				for ( int i = 0; i < count; ++i, ++bit ) {
-					auto obs = bit->value * numericScale;
-					auto pred = dataPred[i] * scale * numericScale;
-
-					sumX += obs;
-					sumY += pred;
-					sumX2 += obs * obs;
-					sumY2 += pred * pred;
-					sumXY += obs * pred;
-				}
-
-				double amplitudeFit = 1.0 - pow((maxObs - maxPred) / (maxObs + maxPred), 2.0);
-				// Pearson correlation coefficient
-				// Ref: https://en.wikipedia.org/wiki/Pearson_correlation_coefficient
-				double corr = max(0.0, (count * sumXY - sumX * sumY) / sqrt(count * sumX2 - sumX * sumX) / sqrt(count * sumY2 - sumY * sumY));
-				assoc->correlation = sqrt(corr * amplitudeFit);
-				assoc->lastMag = mag->magnitude().value();
-
-				/*
-				cerr << toString(sumX) << " " << toString(sumX2) << " " << toString(sumY)
-				     << " " << toString(sumY2) << " " << toString(sumXY) << endl;
-				*/
-
-				SEISCOMP_DEBUG("%s: [%d(%d):%d#%d] dist=%f, mag=%f, gMaxPred=%f, "
-				               "scale=pgv(%f)*amplification(%f)/max(%f)=%f, maxObs=%f, maxPred=%f, "
-				               "ampFit=%f, corr=%f, SGF=%f",
-				               sid, idx0, idx0Obs, idx1, count, assoc->dist, mag->magnitude().value(),
-				               predMax, pgv, amplification, predMax, scale,
-				               maxObs, maxPred, amplitudeFit, corr, assoc->correlation);
-			}
-			else {
-				SEISCOMP_DEBUG("%s: reuse SGF=%f", sid,assoc->correlation);
 			}
 
-			gofs.push_back(assoc->correlation);
+			#if DUMP_DATA
+			ofs.close();
+			#endif
+
+			bit = bitSave;
+
+			double numericScale = 1.0 / maxPred;
+			double sumX{0}, sumY{0}, sumX2{0}, sumY2{0}, sumXY{0};
+
+			for ( int i = 0; i < count; ++i, ++bit ) {
+				auto obs = bit->value * numericScale;
+				auto pred = dataPred[i] * scale * numericScale;
+
+				sumX += obs;
+				sumY += pred;
+				sumX2 += obs * obs;
+				sumY2 += pred * pred;
+				sumXY += obs * pred;
+			}
+
+			double amplitudeFit = 1.0 - pow((maxObs - maxPred) / (maxObs + maxPred), 2.0);
+			// Pearson correlation coefficient
+			// Ref: https://en.wikipedia.org/wiki/Pearson_correlation_coefficient
+			double corr = max(0.0, (count * sumXY - sumX * sumY) / sqrt(count * sumX2 - sumX * sumX) / sqrt(count * sumY2 - sumY * sumY));
+			assoc->correlation = sqrt(corr * amplitudeFit);
+			assoc->lastMag = mag;
+
+			/*
+			cerr << toString(sumX) << " " << toString(sumX2) << " " << toString(sumY)
+			     << " " << toString(sumY2) << " " << toString(sumXY) << endl;
+			*/
+
+			/*
+			SEISCOMP_DEBUG("%s: [%d(%d):%d#%d] dist=%f, mag=%f, gMaxPred=%f, "
+			               "scale=pgv(%f)*amplification(%f)/max(%f)=%f, maxObs=%f, maxPred=%f, "
+			               "ampFit=%f, corr=%f, SGF=%f",
+			               sid, idx0, idx0Obs, idx1, count, assoc->dist, mag,
+			               predMax, pgv, amplification, predMax, scale,
+			               maxObs, maxPred, amplitudeFit, corr, assoc->correlation);
+			*/
+		}
+		else {
+			// SEISCOMP_DEBUG("%s: reuse SGF=%f", sid, assoc->correlation);
 		}
 
-		SEISCOMP_DEBUG("%s: %d values", org->publicID(), gofs.size());
-
-		auto gof = Math::Statistics::mean(gofs) * 100;
-		SEISCOMP_DEBUG("%s: GOF=%f", org->publicID(), gof);
-		if ( gof > eval.gof ) {
-			eval.gof = gof;
-			eval.bestMagnitude = mag->type();
-		}
+		gofs.push_back(assoc->correlation);
 	}
+
+	if ( stationCount ) {
+		*stationCount = static_cast<int>(gofs.size());
+	}
+
+	return Math::Statistics::mean(gofs) * 100;
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 

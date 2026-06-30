@@ -110,6 +110,8 @@ class App : public Seiscomp::Client::Application {
 		void addAssociations(Seiscomp::DataModel::Origin *org);
 		void process(Seiscomp::DataModel::Origin *org, Seiscomp::IO::RecordStream *rs);
 		void process(Seiscomp::DataModel::Origin *org, Evaluation &eval);
+		double compute(Seiscomp::DataModel::Origin *org, const Seiscomp::DataModel::Magnitude *mag);
+		double compute(Seiscomp::DataModel::Origin *org, double mag, int *stationCount = nullptr);
 
 
 	// ----------------------------------------------------------------------
@@ -126,6 +128,7 @@ class App : public Seiscomp::Client::Application {
 				& cfg(cacheSize, "cacheSize")
 				& cfg(maximumDistance, "maximumDistance")
 				& cfg(minimumStations, "minimumStations")
+				& cfg(envelopeMagnitude, "envelopeMagnitude")
 				& cfg(updateInterval, "updateInverval")
 				& cfg(preArrivalTimeWindow, "preArrivalTimeWindow")
 				& cfg(postArrivalTimeShare, "postArrivalTimeShare")
@@ -184,6 +187,24 @@ class App : public Seiscomp::Client::Application {
 				std::vector<std::string> exclude;
 				std::string              defaultSoilClass;
 			}                        sensorLocations;
+
+			struct {
+				void accept(SettingsLinker &linker) {
+					linker
+					& cfg(enable, "enable")
+					& cfg(type, "type")
+					& cfg(minimum, "minimum")
+					& cfg(maximum, "maximum")
+					& cfg(spacing, "spacing")
+					;
+				}
+
+				bool                     enable{false};
+				std::string              type{"Menv"};
+				double                   minimum{3.5};
+				double                   maximum{5.5};
+				double                   spacing{0.5};
+			}                        envelopeMagnitude;
 
 			Seiscomp::Core::TimeSpan cacheSize{1800, 0};
 			size_t                   updateInterval{1};

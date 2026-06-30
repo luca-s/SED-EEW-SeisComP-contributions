@@ -113,6 +113,7 @@ class AssociationTable {
 
 		RangeWrapper<EvaluationContainer> origins();
 		ConstRangeWrapper<EvaluationContainer> origins() const;
+		RangeWrapper<AssociationContainer> assocs();
 		ConstRangeWrapper<AssociationContainer> assocs() const;
 		ConstRangeWrapper<Key1Index> sensors(ObjectType origin) const;
 		ConstRangeWrapper<Key2Index> origins(const std::string &sid) const;
@@ -169,6 +170,11 @@ AssociationTable::origins() {
 inline AssociationTable::ConstRangeWrapper<AssociationTable::EvaluationContainer>
 AssociationTable::origins() const {
 	return { { _eval.begin(), _eval.end() } };
+}
+
+inline AssociationTable::RangeWrapper<AssociationTable::AssociationContainer>
+AssociationTable::assocs() {
+	return { { _assoc.begin(), _assoc.end() } };
 }
 
 inline AssociationTable::ConstRangeWrapper<AssociationTable::AssociationContainer>

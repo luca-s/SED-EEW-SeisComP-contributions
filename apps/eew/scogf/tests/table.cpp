@@ -111,6 +111,10 @@ BOOST_AUTO_TEST_CASE(assoc) {
 	}
 	BOOST_CHECK_EQUAL(cnt, 2);
 
+	for ( auto &[key, assoc] : table.assocs() ) {
+		assoc.lastMag = 3.5;
+	}
+
 	table.setDirty("AB.STA2");
 
 	for ( auto &[key, assoc] : table.assocs() ) {
