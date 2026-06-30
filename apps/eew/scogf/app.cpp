@@ -81,6 +81,7 @@ string join(const string &link, T head, Args... args) {
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 App::App(int argc, char **argv) : Application(argc, argv) {
 	// Subscribe to envelopes
+	setPrimaryMessagingGroup("LOCATION");
 	addMessagingSubscription("AMPLITUDE");
 	addMessagingSubscription("LOCATION");
 	addMessagingSubscription("MAGNITUDE");
@@ -229,10 +230,27 @@ bool App::run() {
 		}
 
 		addAssociations(org.get());
+
+		Notifier::Enable();
+
 		process(org.get(), rs.get());
+
+		Notifier::Disable();
+
+		NotifierMessagePtr nmsg = Notifier::GetMessage();
+		if ( nmsg ) {
+			if ( _settings.test ) {
+				cerr << "Got " << nmsg->size() << " notifiers" << endl;
+			}
+			else {
+				connection()->send(nmsg.get());
+			}
+		}
+
 		return true;
 	}
 
+	Notifier::Enable();
 	return Client::Application::run();
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
@@ -264,6 +282,17 @@ void App::handleTimeout() {
 		}
 
 		process(org, eval);
+	}
+
+	NotifierMessagePtr nmsg = Notifier::GetMessage();
+	if ( nmsg ) {
+		if ( _settings.test ) {
+			SEISCOMP_DEBUG("timeout at %s resulted in %d notifiers",
+			               now.iso(), nmsg->size());
+		}
+		else {
+			connection()->send(nmsg.get());
+		}
 	}
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<

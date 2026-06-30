@@ -145,6 +145,7 @@ class App : public Seiscomp::Client::Application {
 					"This parameter is only required when reading pre-calculated envelope "
 					"values in offline processing, see --ep and --origin-id."
 				)
+				& cliSwitch(test, "Messaging", "test", "Test mode, no messages are sent")
 				& cli(epFile, "Input", "ep",
 					"Name of input XML file (SCML) with all origin for offline "
 					"processing.  Use '-' to read from stdin. The database connection "
@@ -216,6 +217,7 @@ class App : public Seiscomp::Client::Application {
 			std::string              commentID{"eew.ogf.value"};
 			std::string              commentMagID{"eew.ogf.mag"};
 			std::string              recordStreamURL;
+			bool                     test{false};
 			std::string              epFile;
 			bool                     formatted{false};
 			std::string              originID;
