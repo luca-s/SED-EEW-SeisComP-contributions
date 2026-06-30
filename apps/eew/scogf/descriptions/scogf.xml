@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<seiscomp>
+	<module name="scogf" category="EEW" author="Swiss Seismological Service">
+		<description>...	</description>
+		<configuration>
+			<parameter name="cacheSize" type="int" default="1800" unit="s">
+				<description>
+				Duration of the object cache, effectively used for origins.
+				</description>
+			</parameter>
+			<parameter name="maximumDistance" type="double" default="5" unit="degrees">
+				<description>
+				The maximum station distance in degrees.
+				</description>
+			</parameter>
+			<parameter name="minimumStations" type="int" default="0">
+				<description>
+				The minimum number of stations required to compute and populate the
+				goodness of fit.
+				</description>
+			</parameter>
+			<parameter name="updateInverval" type="int" default="1" unit="s">
+				<description>
+				The update interval in seconds to check for OGF updates.
+				</description>
+			</parameter>
+			<parameter name="preArrivalTimeWindow" type="int" default="0" unit="s">
+				<description>
+				An offset in seconds that will be substracted from the arrival time to
+				compute the desired envelope time window.
+				</description>
+			</parameter>
+			<parameter name="postArrivalTimeShare" type="double" default="1.5">
+				<description>
+				"the event is over" (event as represented by an origin) - defined as
+				multiple of the s travel time between an origin and the furthest considered
+				station.
+				</description>
+			</parameter>
+			<parameter name="predictionArchivePath" type="path" default="@DATADIR@/scogf">
+				<description>
+				The path of the predicted envelopes and ground motion coefficients.
+				</description>
+			</parameter>
+			<parameter name="commentID" type="string" default="eew.ogf.value">
+				<description>
+				The ID of the comment of the evaluated origin which receives the maximum
+				of the computed GOF values for each magnitude.
+				</description>
+			</parameter>
+			<parameter name="commentMagID" type="string" default="eew.ogf.mag">
+				<description>
+				The ID of the comment of the evaluated origin which receives the magnitude
+				type of the maximum GOF value.
+				</description>
+			</parameter>
+			<group name="envelopes">
+				<parameter name="bufferSize" type="int" unit="s" default="1800">
+					<description>
+					The buffer size of the envelope buffer per sensor location. This value
+					represents the number of items in the buffer. If the envelope
+					computation is based on an interval of 1s then this value corresponds
+					to number of seconds.
+					</description>
+				</parameter>
+				<parameter name="maxDelay" type="int" unit="s" default="20">
+					<description>
+					The maximum envelope delay in seconds to accept after the event
+					lifetime is over.
+					</description>
+				</parameter>
+			</group>
+			<group name="sensorLocations">
+				<parameter name="include" type="list:string">
+					<description>
+					Sensor location IDs to accept. Empty means all.
+					</description>
+				</parameter>
+				<parameter name="exclude" type="list:string">
+					<description>
+					Sensor location IDs to reject. Empty means none.
+					</description>
+				</parameter>
+				<parameter name="defaultSoilClass" type="string">
+					<description>
+					The default sensor location soil class.
+					</description>
+				</parameter>
+			</group>
+		</configuration>
+		<command-line>
+			<group name="Generic">
+				<optionReference>generic#help</optionReference>
+				<optionReference>generic#version</optionReference>
+				<optionReference>generic#config-file</optionReference>
+				<optionReference>generic#plugins</optionReference>
+				<optionReference>generic#daemon</optionReference>
+				<optionReference>generic#auto-shutdown</optionReference>
+				<optionReference>generic#shutdown-master-module</optionReference>
+				<optionReference>generic#shutdown-master-username</optionReference>
+			</group>
+
+			<group name="Verbosity">
+				<optionReference>verbosity#verbosity</optionReference>
+				<optionReference>verbosity#v</optionReference>
+				<optionReference>verbosity#quiet</optionReference>
+				<optionReference>verbosity#component</optionReference>
+				<optionReference>verbosity#syslog</optionReference>
+				<optionReference>verbosity#lockfile</optionReference>
+				<optionReference>verbosity#console</optionReference>
+				<optionReference>verbosity#debug</optionReference>
+				<optionReference>verbosity#log-file</optionReference>
+			</group>
+
+			<group name="Messaging">
+				<optionReference>messaging#user</optionReference>
+				<optionReference>messaging#host</optionReference>
+				<optionReference>messaging#timeout</optionReference>
+				<optionReference>messaging#primary-group</optionReference>
+				<optionReference>messaging#subscribe-group</optionReference>
+				<optionReference>messaging#encoding</optionReference>
+				<optionReference>messaging#start-stop-msg</optionReference>
+			</group>
+
+			<group name="Database">
+				<optionReference>database#db-driver-list</optionReference>
+				<optionReference>database#database</optionReference>
+				<optionReference>database#config-module</optionReference>
+				<optionReference>database#inventory-db</optionReference>
+				<optionReference>database#db-disable</optionReference>
+			</group>
+
+			<group name="Input">
+				<option flag="I" long-flag="record-url" argument="source-url">
+					<description>
+					The RecordStream source URL. Format:
+					[service://]location[#type]. 'service'  is the name of the
+					RecordStream driver. If 'service' is not given, 'file://' is
+					being used and the name of a miniSEED  file can be given.
+					This parameter is only required when  reading pre-calculated envelope
+					values  in offline processing, see --ep and  --origin-id.
+					</description>
+				</option>
+				<option long-flag="ep" argument="file">
+					<description>
+					Name of input XML file (SCML) with all  origin for offline processing.
+					Use '-' to read from stdin. The database connection is not received
+					from messaging and must be provided. Results will be written as XML
+					to stdout. Please note that envelope data must be provided with -I.
+					</description>
+				</option>
+				<option flag="O" long-flag="origin-id" argument="id">
+					<description>
+					</description>
+				</option>
+			</group>
+
+			<group name="Output">
+				<option flag="f" long-flag="formatted">
+					<description>
+					Use formatted XML output. Otherwise XML is unformatted.
+					</description>
+				</option>
+			</group>
+
+			<group name="Mode">
+				<option long-flag="dump">
+					<description>
+					Dump results as XML rather than sending messages.
+					</description>
+				</option>
+			</group>
+		</command-line>
+	</module>
+</seiscomp>

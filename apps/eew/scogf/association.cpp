@@ -39,7 +39,7 @@ namespace EEW::OGF {
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 std::ostream &operator<<(std::ostream &os, const Association &assoc) {
 	os << assoc.ttP << ", " << assoc.ttS << ", " << assoc.correlation;
-	if ( assoc.dirty ) {
+	if ( !assoc.lastMag ) {
 		os << " (D)";
 	}
 	return os;
@@ -153,7 +153,7 @@ void AssociationTable::setDirty(const std::string &sid) {
 			                 "not available after index1 lookup");
 		}
 		else {
-			ait->second.dirty = true;
+			ait->second.lastMag = Seiscomp::Core::None;
 		}
 	}
 }

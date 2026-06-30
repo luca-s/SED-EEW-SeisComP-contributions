@@ -50,7 +50,7 @@ struct Association {
 	double               ttS{-1}; //!< S travel time w.r.t. origin time
 	Seiscomp::Core::Time endTime; //!< Envelope end time for correlation computation
 	double               correlation{-1}; //!< Current correlation with envelope templates
-	bool                 dirty{false}; //!< Dirty flag, e.g. envelopes have changed
+	OPT(double)          lastMag; //!< Magnitude of last successful computation
 };
 
 

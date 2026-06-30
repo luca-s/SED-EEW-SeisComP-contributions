@@ -88,6 +88,14 @@ class Prediction {
 		const std::vector<std::string> &soilClasses() const;
 
 		/**
+		 * @brief Returns whether two magnitude values are equal in this context.
+		 * @param mag1 Magnitude value one.
+		 * @param mag2 Magnitude value two.
+		 * @return Equality flag.
+		 */
+		constexpr bool equal(double mag1, double mag2) const;
+
+		/**
 		 * @brief Returns the predicted trace.
 		 * @param soilClass The soil class.
 		 * @param mag The magnitude.
@@ -152,6 +160,9 @@ inline const std::vector<std::string> &Prediction::soilClasses() const {
 	return _soilClasses;
 }
 
+inline constexpr bool Prediction::equal(double mag1, double mag2) const {
+	return static_cast<int>(mag1 * 10) == static_cast<int>(mag2 * 10);
+}
 
 }
 

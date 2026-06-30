@@ -118,11 +118,11 @@ BOOST_AUTO_TEST_CASE(assoc) {
 		BOOST_CHECK(eval);
 
 		if ( key.second == "AB.STA2" ) {
-			BOOST_CHECK(assoc.dirty);
+			BOOST_CHECK(!assoc.lastMag);
 			BOOST_CHECK(eval->dirty);
 		}
 		else {
-			BOOST_CHECK(!assoc.dirty);
+			BOOST_CHECK(assoc.lastMag);
 			if ( !table.isAssociated(key.first, "AB.STA2") ) {
 				BOOST_CHECK(!eval->dirty);
 			}

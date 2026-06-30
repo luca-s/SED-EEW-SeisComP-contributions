@@ -206,7 +206,6 @@ class App : public Seiscomp::Client::Application {
 		AssociationTable             _associationTable;
 		Firewall                     _slocFirewall;
 		Prediction                   _prediction;
-		Seiscomp::Geo::GeoFeatureSet _zones;
 		Seiscomp::TravelTimeTable    _ttt;
 };
 

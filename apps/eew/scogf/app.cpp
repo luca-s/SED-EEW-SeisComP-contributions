@@ -349,7 +349,7 @@ void App::handleMessage(Seiscomp::Core::Message *msg) {
 				}
 				else {
 					buffer = it->second.get();
-					// TODO: Check if eval->dirty has to be set as well.
+					_associationTable.setDirty(sid);
 				}
 
 				buffer->append({
@@ -493,100 +493,102 @@ void App::addAssociations(Seiscomp::DataModel::Origin *org) {
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 void App::process(Seiscomp::DataModel::Origin *org, IO::RecordStream *rs) {
-	_envelopeBuffers.clear();
+	if ( rs ) {
+		_envelopeBuffers.clear();
 
-	while ( RecordPtr rec = rs->next() ) {
-		if ( rec->channelCode().empty() || (rec->channelCode().size() != 3) ) {
-			continue;
-		}
-
-		if ( (rec->channelCode()[1] != 'H') || (rec->channelCode()[2] != 'X') ) {
-			continue;
-		}
-
-		auto sid = join(".", rec->networkCode(), rec->stationCode(), rec->locationCode());
-		if ( _slocFirewall.isDenied(sid) ) {
-			SEISCOMP_WARNING("%s: location is denied due to configuration", sid);
-			continue;
-		}
-
-		EnvelopeBuffer *buffer;
-
-		auto it = _envelopeBuffers.find(sid);
-		if ( it == _envelopeBuffers.end() ) {
-			auto inv = Client::Inventory::Instance();
-			auto sloc = inv->getSensorLocation(rec->networkCode(),
-			                                   rec->stationCode(),
-			                                   rec->locationCode(),
-			                                   rec->startTime());
-			if ( !sloc ) {
-				SEISCOMP_WARNING("%s: no inventory information for epoch at %s",
-				                 sid, rec->startTime().iso());
+		while ( RecordPtr rec = rs->next() ) {
+			if ( rec->channelCode().empty() || (rec->channelCode().size() != 3) ) {
 				continue;
 			}
 
-			try {
-				auto loc = DataModel::getLocation(sloc);
-				double elev = 0;
+			if ( (rec->channelCode()[1] != 'H') || (rec->channelCode()[2] != 'X') ) {
+				continue;
+			}
+
+			auto sid = join(".", rec->networkCode(), rec->stationCode(), rec->locationCode());
+			if ( _slocFirewall.isDenied(sid) ) {
+				SEISCOMP_WARNING("%s: location is denied due to configuration", sid);
+				continue;
+			}
+
+			EnvelopeBuffer *buffer;
+
+			auto it = _envelopeBuffers.find(sid);
+			if ( it == _envelopeBuffers.end() ) {
+				auto inv = Client::Inventory::Instance();
+				auto sloc = inv->getSensorLocation(rec->networkCode(),
+				                                   rec->stationCode(),
+				                                   rec->locationCode(),
+				                                   rec->startTime());
+				if ( !sloc ) {
+					SEISCOMP_WARNING("%s: no inventory information for epoch at %s",
+					                 sid, rec->startTime().iso());
+					continue;
+				}
+
 				try {
-					elev = sloc->elevation();
-				}
-				catch ( ... ) {
+					auto loc = DataModel::getLocation(sloc);
+					double elev = 0;
 					try {
-						elev = sloc->station()->elevation();
+						elev = sloc->elevation();
 					}
-					catch ( ... ) {}
+					catch ( ... ) {
+						try {
+							elev = sloc->station()->elevation();
+						}
+						catch ( ... ) {}
+					}
+
+					buffer = new EnvelopeBuffer(_settings.envelopes.bufferSize);
+					buffer->lat = loc.lat;
+					buffer->lon = loc.lon;
+					buffer->elev = elev;
+
+					addAssociations(sid, *buffer);
+
+					_envelopeBuffers[sid].reset(buffer);
 				}
-
-				buffer = new EnvelopeBuffer(_settings.envelopes.bufferSize);
-				buffer->lat = loc.lat;
-				buffer->lon = loc.lon;
-				buffer->elev = elev;
-
-				addAssociations(sid, *buffer);
-
-				_envelopeBuffers[sid].reset(buffer);
+				catch( exception &e ) {
+					SEISCOMP_WARNING("%s: %s", sid, e.what());
+					break;
+				}
 			}
-			catch( exception &e ) {
-				SEISCOMP_WARNING("%s: %s", sid, e.what());
-				break;
+			else {
+				buffer = it->second.get();
+			}
+
+			DoubleArrayPtr tmp;
+			const DoubleArray *data = DoubleArray::ConstCast(rec->data());
+			if ( !data ) {
+				tmp = static_cast<DoubleArray*>(rec->data()->copy(Array::DOUBLE));
+				data = tmp.get();
+			}
+
+			auto timestamp = rec->startTime();
+			auto dt = Core::TimeSpan(1.0 / rec->samplingFrequency());
+
+			for ( int i = 0; i < data->size(); ++i ) {
+				buffer->append({ timestamp, data->get(i) });
+				timestamp += dt;
+			}
+
+			buffer->dirty = true;
+		}
+
+		size_t newLimit = 0;
+		for ( const auto &[sid, buffer] : _envelopeBuffers ) {
+			SEISCOMP_DEBUG("%s: registered %d/%d envelopes",
+			               sid, buffer->size(), buffer->appended());
+			if ( (buffer->appended() > buffer->size()) && (buffer->appended() > newLimit) ) {
+				newLimit = buffer->appended();
 			}
 		}
-		else {
-			buffer = it->second.get();
+
+		if ( newLimit > 0 ) {
+			SEISCOMP_WARNING("envelopes.bufferSize = %d is not large enough to hold all read "
+			                 "envelopes, consider increasing it to at least %d",
+			                 _settings.envelopes.bufferSize, newLimit);
 		}
-
-		DoubleArrayPtr tmp;
-		const DoubleArray *data = DoubleArray::ConstCast(rec->data());
-		if ( !data ) {
-			tmp = static_cast<DoubleArray*>(rec->data()->copy(Array::DOUBLE));
-			data = tmp.get();
-		}
-
-		auto timestamp = rec->startTime();
-		auto dt = Core::TimeSpan(1.0 / rec->samplingFrequency());
-
-		for ( int i = 0; i < data->size(); ++i ) {
-			buffer->append({ timestamp, data->get(i) });
-			timestamp += dt;
-		}
-
-		buffer->dirty = true;
-	}
-
-	size_t newLimit = 0;
-	for ( const auto &[sid, buffer] : _envelopeBuffers ) {
-		SEISCOMP_DEBUG("%s: registered %d/%d envelopes",
-		               sid, buffer->size(), buffer->appended());
-		if ( (buffer->appended() > buffer->size()) && (buffer->appended() > newLimit) ) {
-			newLimit = buffer->appended();
-		}
-	}
-
-	if ( newLimit > 0 ) {
-		SEISCOMP_WARNING("envelopes.bufferSize = %d is not large enough to hold all read "
-		                 "envelopes, consider increasing it to at least %d",
-		                 _settings.envelopes.bufferSize, newLimit);
 	}
 
 	Evaluation eval;
@@ -654,157 +656,170 @@ void App::process(Seiscomp::DataModel::Origin *org, Evaluation &eval) {
 		for ( const auto &[org, sid] : _associationTable.sensors(org) ) {
 			auto it = _envelopeBuffers.find(sid);
 			if ( it == _envelopeBuffers.end() ) {
+				SEISCOMP_DEBUG("No envelope buffer");
 				continue;
 			}
 
 			auto buffer = it->second.get();
 			if ( !buffer || buffer->empty() ) {
 				// No envelopes
+				SEISCOMP_DEBUG("No envelopes");
 				continue;
 			}
 
 			auto assoc = _associationTable.assoc(org, sid);
 			if ( !assoc ) {
 				// No association
+				SEISCOMP_DEBUG("No assoc");
 				continue;
 			}
 
-			ArrayPtr array;
-			try {
-				array = _prediction.get(sid, mag->magnitude().value(), assoc->dist);
-				if ( !array ) {
+			if ( !assoc->lastMag
+			  || !_prediction.equal(*assoc->lastMag, mag->magnitude().value()) ) {
+				// A dirty association requires a recomputation
+				ArrayPtr array;
+				try {
+					array = _prediction.get(sid, mag->magnitude().value(), assoc->dist);
+					if ( !array ) {
+						// No predictions
+						continue;
+					}
+				}
+				catch ( ... ) {
 					// No predictions
 					continue;
 				}
-			}
-			catch ( ... ) {
-				// No predictions
-				continue;
-			}
 
-			double scale = 1.0;
-			double pgv = 1.0;
-			try {
-				pgv = _prediction.pgv(org, mag->magnitude().value(), assoc->dist);
-				scale = pgv;
-			}
-			catch ( ... ) {}
+				double scale = 1.0;
+				double pgv = 1.0;
+				try {
+					pgv = _prediction.pgv(org, mag->magnitude().value(), assoc->dist);
+					scale = pgv;
+				}
+				catch ( ... ) {}
 
-			DoubleArrayPtr pred = DoubleArray::Cast(array);
-			if ( !pred ) {
-				pred = static_cast<DoubleArray*>(array->copy(Array::DOUBLE));
-			}
+				DoubleArrayPtr pred = DoubleArray::Cast(array);
+				if ( !pred ) {
+					pred = static_cast<DoubleArray*>(array->copy(Array::DOUBLE));
+				}
 
-			auto predMax = pred->max();
-			scale /= predMax;
+				auto predMax = pred->max();
+				scale /= predMax;
 
-			double amplification = _prediction.amplification(sid);
-			scale *= amplification;
+				double amplification = _prediction.amplification(sid);
+				scale *= amplification;
 
-			// Desired time window (a)
-			double startTimeA = assoc->ttP - _settings.preArrivalTimeWindow;
-			double endTimeA = assoc->ttS * _settings.postArrivalTimeShare;
+				// Desired time window (a)
+				double startTimeA = assoc->ttP - _settings.preArrivalTimeWindow;
+				double endTimeA = assoc->ttS * _settings.postArrivalTimeShare;
 
-			// Time window of available template (b)
-			double startTimeB = 0;
-			double endTimeB = pred->size();
+				// Time window of available template (b)
+				double startTimeB = 0;
+				double endTimeB = pred->size();
 
-			// The time interval (the samples) covered by envelope values in the buffer (c)
-			double startTimeC = static_cast<double>(buffer->front().timestamp - org->time().value());
-			double endTimeC = static_cast<double>(buffer->back().timestamp - org->time().value()) + 1.0;
+				// The time interval (the samples) covered by envelope values in the buffer (c)
+				double startTimeC = static_cast<double>(buffer->front().timestamp - org->time().value());
+				double endTimeC = static_cast<double>(buffer->back().timestamp - org->time().value()) + 1.0;
 
-			double startTime = max(startTimeA, max(startTimeB, startTimeC));
-			double endTime = min(endTimeA, min(endTimeB, endTimeC));
+				double startTime = max(startTimeA, max(startTimeB, startTimeC));
+				double endTime = min(endTimeA, min(endTimeB, endTimeC));
 
-			int idx0 = static_cast<int>(startTime);
-			int idx1 = static_cast<int>(endTime);
+				int idx0 = static_cast<int>(startTime);
+				int idx1 = static_cast<int>(endTime);
 
-			if ( idx0 >= idx1 ) {
-				SEISCOMP_DEBUG("Empty correlation time window: %d:%d", idx0, idx1);
-				continue;
-			}
+				if ( idx0 >= idx1 ) {
+					SEISCOMP_DEBUG("Empty correlation time window: %d:%d", idx0, idx1);
+					continue;
+				}
 
-			int count = idx1 - idx0;
-			double *dataPred = pred->typedData() + idx0;
+				int count = idx1 - idx0;
+				double *dataPred = pred->typedData() + idx0;
 
-			// Move buffer to start index
-			auto bit = buffer->begin();
-			int idx0Obs = (org->time().value() + TimeSpan(startTime) - bit->timestamp).seconds();
-			for ( int i = 0; i < idx0Obs; ++i ) {
-				++bit;
-			}
+				// Move buffer to start index
+				auto bit = buffer->begin();
+				int idx0Obs = (org->time().value() + TimeSpan(startTime) - bit->timestamp).seconds();
+				for ( int i = 0; i < idx0Obs; ++i ) {
+					++bit;
+				}
 
-			auto bitSave = bit;
+				auto bitSave = bit;
 
-			double maxObs, maxPred;
-
-			#if DUMP_DATA
-			ofstream ofs;
-			ofs.open(sid + ".csv");
-			#endif
-
-			for ( int i = 0; i < count; ++i, ++bit ) {
-				auto obs = bit->value;
-				auto pred = dataPred[i] * scale;
+				double maxObs, maxPred;
 
 				#if DUMP_DATA
-				ofs << obs << "\t" << pred << "\n";
+				ofstream ofs;
+				ofs.open(sid + ".csv");
 				#endif
 
-				if ( !i ) {
-					maxObs = obs;
-					maxPred = pred;
-				}
-				else {
-					if ( maxObs < obs ) {
+				for ( int i = 0; i < count; ++i, ++bit ) {
+					auto obs = bit->value;
+					auto pred = dataPred[i] * scale;
+
+					#if DUMP_DATA
+					ofs << obs << "\t" << pred << "\n";
+					#endif
+
+					if ( !i ) {
 						maxObs = obs;
-					}
-					if  ( maxPred < pred ) {
 						maxPred = pred;
 					}
+					else {
+						if ( maxObs < obs ) {
+							maxObs = obs;
+						}
+						if  ( maxPred < pred ) {
+							maxPred = pred;
+						}
+					}
 				}
+
+				#if DUMP_DATA
+				ofs.close();
+				#endif
+
+				bit = bitSave;
+
+				double numericScale = 1.0 / maxPred;
+				double sumX{0}, sumY{0}, sumX2{0}, sumY2{0}, sumXY{0};
+
+				for ( int i = 0; i < count; ++i, ++bit ) {
+					auto obs = bit->value * numericScale;
+					auto pred = dataPred[i] * scale * numericScale;
+
+					sumX += obs;
+					sumY += pred;
+					sumX2 += obs * obs;
+					sumY2 += pred * pred;
+					sumXY += obs * pred;
+				}
+
+				double amplitudeFit = 1.0 - pow((maxObs - maxPred) / (maxObs + maxPred), 2.0);
+				// Pearson correlation coefficient
+				// Ref: https://en.wikipedia.org/wiki/Pearson_correlation_coefficient
+				double corr = max(0.0, (count * sumXY - sumX * sumY) / sqrt(count * sumX2 - sumX * sumX) / sqrt(count * sumY2 - sumY * sumY));
+				assoc->correlation = sqrt(corr * amplitudeFit);
+				assoc->lastMag = mag->magnitude().value();
+
+				/*
+				cerr << toString(sumX) << " " << toString(sumX2) << " " << toString(sumY)
+				     << " " << toString(sumY2) << " " << toString(sumXY) << endl;
+				*/
+
+				SEISCOMP_DEBUG("%s: [%d(%d):%d#%d] dist=%f, mag=%f, gMaxPred=%f, "
+				               "scale=pgv(%f)*amplification(%f)/max(%f)=%f, maxObs=%f, maxPred=%f, "
+				               "ampFit=%f, corr=%f, SGF=%f",
+				               sid, idx0, idx0Obs, idx1, count, assoc->dist, mag->magnitude().value(),
+				               predMax, pgv, amplification, predMax, scale,
+				               maxObs, maxPred, amplitudeFit, corr, assoc->correlation);
+			}
+			else {
+				SEISCOMP_DEBUG("%s: reuse SGF=%f", sid,assoc->correlation);
 			}
 
-			#if DUMP_DATA
-			ofs.close();
-			#endif
-
-			bit = bitSave;
-
-			double numericScale = 1.0 / maxPred;
-			double sumX{0}, sumY{0}, sumX2{0}, sumY2{0}, sumXY{0};
-
-			for ( int i = 0; i < count; ++i, ++bit ) {
-				auto obs = bit->value * numericScale;
-				auto pred = dataPred[i] * scale * numericScale;
-
-				sumX += obs;
-				sumY += pred;
-				sumX2 += obs * obs;
-				sumY2 += pred * pred;
-				sumXY += obs * pred;
-			}
-
-			double amplitudeFit = 1.0 - pow((maxObs - maxPred) / (maxObs + maxPred), 2.0);
-			// Pearson correlation coefficient
-			// Ref: https://en.wikipedia.org/wiki/Pearson_correlation_coefficient
-			double corr = max(0.0, (count * sumXY - sumX * sumY) / sqrt(count * sumX2 - sumX * sumX) / sqrt(count * sumY2 - sumY * sumY));
-			double SGF = sqrt(corr * amplitudeFit);
-
-			/*
-			cerr << toString(sumX) << " " << toString(sumX2) << " " << toString(sumY)
-			     << " " << toString(sumY2) << " " << toString(sumXY) << endl;
-			*/
-
-			SEISCOMP_DEBUG("%s: [%d(%d):%d#%d] dist=%f, mag=%f, gMaxPred=%f, "
-			               "scale=pgv(%f)*amplification(%f)/max(%f)=%f, maxObs=%f, maxPred=%f, "
-			               "ampFit=%f, corr=%f, SGF=%f",
-			               sid, idx0, idx0Obs, idx1, count, assoc->dist, mag->magnitude().value(),
-			               predMax, pgv, amplification, predMax, scale,
-			               maxObs, maxPred, amplitudeFit, corr, SGF);
-
-			gofs.push_back(SGF);
+			gofs.push_back(assoc->correlation);
 		}
+
+		SEISCOMP_DEBUG("%s: %d values", org->publicID(), gofs.size());
 
 		auto gof = Math::Statistics::mean(gofs) * 100;
 		SEISCOMP_DEBUG("%s: GOF=%f", org->publicID(), gof);
