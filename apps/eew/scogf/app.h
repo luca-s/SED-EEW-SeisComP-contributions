@@ -36,7 +36,10 @@
 #include <seiscomp/io/recordstream.h>
 #include <seiscomp/seismology/ttt.h>
 #include <seiscomp/utils/stringfirewall.h>
+
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 
 #include "association.h"
 #include "circular.h"
@@ -63,6 +66,7 @@ class App : public Seiscomp::Client::Application {
 
 		bool init() override;
 		bool run() override;
+		void exit(int exitCode) override;
 
 		void handleTimeout() override;
 		void handleMessage(Seiscomp::Core::Message *msg) override;
@@ -104,6 +108,7 @@ class App : public Seiscomp::Client::Application {
 				size_t _appends{0};
 		};
 
+		bool playback();
 		Association *addAssociation(Seiscomp::DataModel::Origin *org,
 		                            const std::string &sid, const EnvelopeBuffer &buffer);
 		void addAssociations(const std::string &sid, const EnvelopeBuffer &buffer);
@@ -159,6 +164,10 @@ class App : public Seiscomp::Client::Application {
 					"Use formatted XML output. Otherwise XML is unformatted.")
 				& cliSwitch(dump, "Mode", "dump",
 					"Dump results as XML rather than sending messages."
+				)
+				& cliSwitch(playback, "Playback", "playback",
+					"Enables playback of envelopes and event parameters. This option "
+					"required -I and --ep to be set."
 				)
 				;
 			}
@@ -222,6 +231,7 @@ class App : public Seiscomp::Client::Application {
 			bool                     formatted{false};
 			std::string              originID;
 			bool                     dump{false};
+			bool                     playback{false};
 		} _settings;
 
 		Cache                        _cache;
@@ -230,6 +240,9 @@ class App : public Seiscomp::Client::Application {
 		Firewall                     _slocFirewall;
 		Prediction                   _prediction;
 		Seiscomp::TravelTimeTable    _ttt;
+
+		std::mutex                   _mutexAlert;
+		std::condition_variable      _signalAlert;
 };
 
 

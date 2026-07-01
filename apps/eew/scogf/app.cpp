@@ -35,14 +35,15 @@
 #include <seiscomp/datamodel/vs/envelope.h>
 #include <seiscomp/datamodel/vs/envelopechannel.h>
 #include <seiscomp/datamodel/vs/envelopevalue.h>
+#include <seiscomp/datamodel/vs/vs.h>
 #include <seiscomp/io/archive/xmlarchive.h>
 #include <seiscomp/math/geo.h>
 #include <seiscomp/math/mean.h>
 #include <seiscomp/utils/misc.h>
 
+#include <cmath>
 #include <filesystem>
 #include <limits>
-#include <cmath>
 
 #include "app.h"
 
@@ -70,6 +71,65 @@ template<typename T, typename... Args>
 string join(const string &link, T head, Args... args) {
 	return toString(head) + (... + (link + toString(args)));
 }
+
+inline ostream &operator<<(ostream &os, const WaveformStreamID &wid) {
+	os << wid.networkCode() << "." << wid.stationCode() << "."
+	   << wid.locationCode() << "." << wid.channelCode();
+	return os;
+}
+
+
+class PlaybackVisitor : public Visitor {
+	public:
+		using Storage = vector<pair<NotifierMessagePtr, Time>>;
+
+	public:
+		PlaybackVisitor(Storage &storage)
+		: _storage(storage) {}
+
+	public:
+		bool visit(PublicObject *po) override {
+			auto org = Origin::Cast(po);
+			if ( org ) {
+				try {
+					auto ts = org->creationInfo().creationTime();
+					NotifierMessagePtr nmsg = new NotifierMessage;
+					nmsg->attach(new Notifier(org->parent()->className(), OP_ADD, org->clone()));
+					_storage.push_back({ nmsg, ts 	});
+				}
+				catch ( exception &e ) {
+					SEISCOMP_ERROR("%s: %s", org->publicID(), e.what());
+					return true;
+				}
+				return true;
+			}
+
+			auto stamag = StationMagnitude::Cast(po);
+			if ( stamag ) {
+				try {
+					auto ts = stamag->creationInfo().creationTime();
+					NotifierMessagePtr nmsg = new NotifierMessage;
+					nmsg->attach(new Notifier(stamag->parent()->className(), OP_ADD, stamag->clone()));
+					_storage.push_back({ nmsg, ts });
+				}
+				catch ( exception &e ) {
+					SEISCOMP_WARNING("%s: %s", stamag->publicID(), e.what());
+					return true;
+				}
+
+				return false;
+			}
+
+			return false;
+		}
+
+		void visit(Object *o) {
+			return;
+		}
+
+	private:
+		Storage &_storage;
+};
 
 
 }
@@ -117,6 +177,10 @@ bool App::validateParameters() {
 	if ( _settings.commentID.empty() ) {
 		cerr << "Error: commentID must not be empty" << endl;
 		return false;
+	}
+
+	if ( _settings.playback ) {
+		setLoadStationsEnabled(false);
 	}
 
 	return true;
@@ -173,7 +237,10 @@ bool App::init() {
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 bool App::run() {
-	if ( !_settings.epFile.empty() ) {
+	if ( _settings.playback ) {
+		return playback();
+	}
+	else if ( !_settings.epFile.empty() ) {
 		Notifier::Disable();
 
 		SEISCOMP_DEBUG("Reading envelopes from %s", _settings.recordStreamURL);
@@ -252,6 +319,21 @@ bool App::run() {
 
 	Notifier::Enable();
 	return Client::Application::run();
+}
+// <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+
+
+// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+void App::exit(int exitCode) {
+	{
+		// Interupt running threads
+		lock_guard lock(_mutexAlert);
+		_signalAlert.notify_all();
+	}
+
+	Client::Application::exit(exitCode);
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
@@ -944,6 +1026,192 @@ double App::compute(Origin *org, double mag, int *stationCount) {
 	}
 
 	return Math::Statistics::mean(gofs) * 100;
+}
+// <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+
+
+// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+bool App::playback() {
+	Notifier::Disable();
+
+	vector<VS::EnvelopePtr> envelopes;
+	PlaybackVisitor::Storage notifiers;
+
+	// Read envelopes
+	if ( !_settings.recordStreamURL.empty() ) {
+		IO::RecordStreamPtr rs = IO::RecordStream::Open(_settings.recordStreamURL.data());
+		if ( !rs ) {
+			SEISCOMP_ERROR("%s: failed to open recordstream", _settings.recordStreamURL);
+			return false;
+		}
+
+		while ( RecordPtr rec = rs->next() ) {
+			if ( rec->channelCode().empty() || (rec->channelCode().size() != 3) ) {
+				continue;
+			}
+
+			if ( (rec->channelCode()[1] != 'H') || (rec->channelCode()[2] != 'X') ) {
+				continue;
+			}
+
+			DoubleArrayPtr tmp;
+			const DoubleArray *data = DoubleArray::ConstCast(rec->data());
+			if ( !data ) {
+				tmp = static_cast<DoubleArray*>(rec->data()->copy(Array::DOUBLE));
+				data = tmp.get();
+			}
+
+			auto timestamp = rec->startTime();
+			auto dt = Core::TimeSpan(1.0 / rec->samplingFrequency());
+
+			for ( int i = 0; i < data->size(); ++i ) {
+				VS::EnvelopePtr env = VS::Envelope::Create();
+				env->setNetwork(rec->networkCode());
+				env->setStation(rec->stationCode());
+				env->setTimestamp(timestamp);
+				auto *chan = VS::EnvelopeChannel::Create();
+				chan->setName("H");
+				chan->setWaveformID(WaveformStreamID(
+					rec->networkCode(), rec->stationCode(),
+					rec->locationCode(), rec->channelCode(),
+					{}
+				));
+				auto *value = new VS::EnvelopeValue((*data)[i], "vel", None);
+				chan->add(value);
+				env->add(chan);
+				envelopes.push_back(env);
+				timestamp += dt;
+			}
+		}
+
+		sort(envelopes.begin(), envelopes.end(), [](const auto &env1, const auto &env2) {
+			return env1->timestamp() < env2->timestamp();
+		});
+	}
+	else {
+		SEISCOMP_ERROR("No record source defined");
+		return false;
+	}
+
+	// Read event parameters
+	if ( !_settings.epFile.empty() ) {
+		SEISCOMP_DEBUG("reading %s", _settings.epFile);
+
+		IO::XMLArchive ar;
+		if ( !ar.open(_settings.epFile.data()) ) {
+			SEISCOMP_ERROR("%s: failed to open XML file", _settings.epFile);
+			return false;
+		}
+
+		EventParametersPtr ep;
+		ar >> ep;
+		ar.close();
+
+		if ( !ep ) {
+			SEISCOMP_WARNING("%s: no event parameters found", _settings.epFile);
+		}
+
+		PlaybackVisitor visitor(notifiers);
+		ep->accept(&visitor);
+
+		sort(notifiers.begin(), notifiers.end(), [](const auto &n1, const auto &n2) {
+			return n1.second < n2.second;
+		});
+	}
+
+	OPT(Time) earliestTime;
+
+	if ( !envelopes.empty() ) {
+		earliestTime = envelopes.front()->timestamp();
+		SEISCOMP_DEBUG("Envelopes start at %s", envelopes.front()->timestamp().iso());
+	}
+
+	if ( !notifiers.empty() ) {
+		earliestTime = min(*earliestTime, notifiers.front().second);
+		SEISCOMP_DEBUG("Notifiers start at %s", notifiers.front().second.iso());
+	}
+
+	if ( !earliestTime ) {
+		SEISCOMP_ERROR("Nothing to do");
+		return false;
+	}
+
+	auto timeOffset = Time::UTC() - *earliestTime;
+
+	thread envThread, epThread;
+
+	if ( !envelopes.empty() ) {
+		auto envTimeOffset = timeOffset;
+
+		for ( auto &env : envelopes ) {
+			env->setTimestamp(env->timestamp() + timeOffset);
+		}
+		envTimeOffset = TimeSpan();
+
+		envThread = thread([&]() {
+			for ( auto &env : envelopes ) {
+				unique_lock lock(_mutexAlert);
+
+				auto delay = (env->timestamp() + envTimeOffset - Time::UTC()).repr();
+				if ( delay.count() > 0 ) {
+					_signalAlert.wait_for(lock, delay, [this]() { return isExitRequested(); });
+				}
+
+				if ( isExitRequested() ) {
+					break;
+				}
+
+				Core::DataMessagePtr msg = new Core::DataMessage;
+				msg->attach(env.get());
+
+				if ( _settings.test ) {
+					cout << env->timestamp().iso() << " "
+					     << env->envelopeChannel(0)->waveformID() << " "
+					     << env->envelopeChannel(0)->envelopeValue(0)->value()
+					     << endl;
+				}
+				else {
+					connection()->send("AMPLITUDE", msg.get());
+				}
+			}
+		});
+	}
+
+	if ( !notifiers.empty() ) {
+		epThread = thread([&]() {
+			for ( auto &n : notifiers ) {
+				unique_lock lock(_mutexAlert);
+
+				auto delay = (n.second + timeOffset - Time::UTC()).repr();
+				if ( delay.count() > 0 ) {
+					_signalAlert.wait_for(lock, delay, [this]() { return isExitRequested(); });
+				}
+
+				if ( isExitRequested() ) {
+					break;
+				}
+
+				if ( _settings.test ) {
+					cerr << n.second.iso() << " " << (*n.first->begin())->className() << endl;
+				}
+				else {
+					connection()->send(n.first.get());
+				}
+			}
+		});
+	}
+
+	if ( envThread.joinable() ) {
+		envThread.join();
+	}
+
+	if ( epThread.joinable() ) {
+		epThread.join();
+	}
+
+	return true;
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
