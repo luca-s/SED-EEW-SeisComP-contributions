@@ -169,6 +169,10 @@ class App : public Seiscomp::Client::Application {
 					"Enables playback of envelopes and event parameters. This option "
 					"required -I and --ep to be set."
 				)
+				& cliSwitch(shiftTimes, "Playback", "real-time",
+					"Enables shifting object times into real-time. This has only an "
+					"effect in combination with --playback."
+				)
 				;
 			}
 
@@ -232,6 +236,7 @@ class App : public Seiscomp::Client::Application {
 			std::string              originID;
 			bool                     dump{false};
 			bool                     playback{false};
+			bool                     shiftTimes{false};
 		} _settings;
 
 		Cache                        _cache;

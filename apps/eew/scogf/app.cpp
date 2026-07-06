@@ -44,6 +44,7 @@
 #include <cmath>
 #include <filesystem>
 #include <limits>
+#include <set>
 
 #include "app.h"
 
@@ -72,6 +73,19 @@ string join(const string &link, T head, Args... args) {
 	return toString(head) + (... + (link + toString(args)));
 }
 
+template <typename T>
+void retouch(T &o, const Time &timestamp) {
+	try {
+		o.creationInfo();
+	}
+	catch ( ... ) {
+		o.setCreationInfo(CreationInfo());
+	}
+
+	o.creationInfo().setCreationTime(timestamp);
+	o.creationInfo().setModificationTime(None);
+}
+
 inline ostream &operator<<(ostream &os, const WaveformStreamID &wid) {
 	os << wid.networkCode() << "." << wid.stationCode() << "."
 	   << wid.locationCode() << "." << wid.channelCode();
@@ -84,18 +98,22 @@ class PlaybackVisitor : public Visitor {
 		using Storage = vector<pair<NotifierMessagePtr, Time>>;
 
 	public:
-		PlaybackVisitor(Storage &storage)
-		: _storage(storage) {}
+		PlaybackVisitor(Storage &storage,
+		                TimeSpan originDelay = {5, 0},
+		                TimeSpan amplitudeDelay = {10, 0})
+		: _storage(storage)
+		, _originDelay(originDelay)
+		, _amplitudeDelay(amplitudeDelay) {}
 
 	public:
 		bool visit(PublicObject *po) override {
 			auto org = Origin::Cast(po);
 			if ( org ) {
 				try {
-					auto ts = org->creationInfo().creationTime();
+					auto ts = org->time().value() + _originDelay;
 					NotifierMessagePtr nmsg = new NotifierMessage;
-					nmsg->attach(new Notifier(org->parent()->className(), OP_ADD, org->clone()));
-					_storage.push_back({ nmsg, ts 	});
+					nmsg->attach(new Notifier(org->parent()->publicID(), OP_ADD, org->clone()));
+					_storage.push_back({ nmsg, ts });
 				}
 				catch ( exception &e ) {
 					SEISCOMP_ERROR("%s: %s", org->publicID(), e.what());
@@ -104,17 +122,36 @@ class PlaybackVisitor : public Visitor {
 				return true;
 			}
 
+			auto mag = Magnitude::Cast(po);
+			if ( mag ) {
+				_magnitudes.push_back(mag);
+				return false;
+			}
+
 			auto stamag = StationMagnitude::Cast(po);
 			if ( stamag ) {
+				if ( stamag->amplitudeID().empty() ) {
+					SEISCOMP_WARNING("%s: no amplitude referenced", stamag->publicID());
+					return false;
+				}
+
+				auto amp = Amplitude::Find(stamag->amplitudeID());
+
+				if ( !amp ) {
+					SEISCOMP_WARNING("%s: referenced amplitude %s not found: ignoring",
+					                 stamag->publicID(), stamag->amplitudeID());
+					return false;
+				}
+
 				try {
-					auto ts = stamag->creationInfo().creationTime();
-					NotifierMessagePtr nmsg = new NotifierMessage;
-					nmsg->attach(new Notifier(stamag->parent()->className(), OP_ADD, stamag->clone()));
-					_storage.push_back({ nmsg, ts });
+					auto ts = amp->timeWindow().reference() + _amplitudeDelay;
+					// NotifierMessagePtr nmsg = new NotifierMessage;
+					// nmsg->attach(new Notifier(stamag->parent()->className(), OP_ADD, stamag->clone()));
+					// _storage.push_back({ nmsg, ts });
+					_stationMagnitudes[stamag->publicID()] = ts;
 				}
 				catch ( exception &e ) {
 					SEISCOMP_WARNING("%s: %s", stamag->publicID(), e.what());
-					return true;
 				}
 
 				return false;
@@ -123,12 +160,68 @@ class PlaybackVisitor : public Visitor {
 			return false;
 		}
 
-		void visit(Object *o) {
+		void visit(Object *o) override {
 			return;
 		}
 
+		void finished() override {
+			cerr << "Computing magnitude updates" << endl;
+			for ( auto mag : _magnitudes ) {
+				vector<pair<StationMagnitude*, Time>> stamags;
+				for ( size_t i = 0; i < mag->stationMagnitudeContributionCount(); ++i ) {
+					auto contrib = mag->stationMagnitudeContribution(i);
+					auto it = _stationMagnitudes.find(contrib->stationMagnitudeID());
+					if ( it == _stationMagnitudes.end() ) {
+						continue;
+					}
+					auto smag = StationMagnitude::Find(contrib->stationMagnitudeID());
+					if ( smag ) {
+						stamags.push_back({ smag, it->second });
+					}
+				}
+				if ( stamags.empty() ) {
+					SEISCOMP_WARNING("%s: invalid magnitude: ignoring", mag->publicID());
+					continue;
+				}
+
+				sort(stamags.begin(), stamags.end(), [](const auto &s1, const auto &s2) {
+					return s1.second < s2.second;
+				});
+
+				cerr << "* " << mag->publicID() << " " << mag->type() << " " << stamags.size() << endl;
+
+				double sum = 0.0;
+				int count = 0;
+
+				for ( auto &item : stamags ) {
+					sum += item.first->magnitude().value();
+					++count;
+
+					auto newMag = static_cast<Magnitude*>(mag->clone());
+					newMag->setMagnitude(RealQuantity(sum / count));
+					newMag->setStationCount(count);
+					newMag->setMethodID("mean");
+
+					NotifierMessagePtr nmsg = new NotifierMessage;
+					nmsg->attach(new Notifier(mag->parent()->publicID(), count < 2 ? OP_ADD : OP_UPDATE, newMag));
+					_storage.push_back({ nmsg, item.second });
+
+					cerr << "  * " << item.second << " " << newMag->stationCount()
+					     << " " << newMag->magnitude().value()
+					     << endl;
+				}
+			}
+
+			_stationMagnitudes = {};
+			_magnitudes = {};
+		}
+
 	private:
-		Storage &_storage;
+		Storage                                    &_storage;
+		TimeSpan                                    _originDelay;
+		TimeSpan                                    _amplitudeDelay;
+		unordered_map<string, Time>                 _stationMagnitudes;
+		vector<MagnitudePtr>                        _magnitudes;
 };
 
 
@@ -165,7 +258,7 @@ bool App::validateParameters() {
 			return false;
 		}
 
-		if ( !_settings.epFile.empty() ) {
+		if ( (!_settings.playback && !_settings.epFile.empty()) || _settings.test ) {
 			setMessagingEnabled(false);
 		}
 
@@ -181,6 +274,11 @@ bool App::validateParameters() {
 
 	if ( _settings.playback ) {
 		setLoadStationsEnabled(false);
+
+		if ( _settings.recordStreamURL.empty() && _settings.epFile.empty() ) {
+			cerr << "Error: --playback requires either -I or --ep or both" << endl;
+			return false;
+		}
 	}
 
 	return true;
@@ -353,10 +451,12 @@ void App::handleTimeout() {
 		auto &eval = it->second;
 		++it;
 
+		/*
 		if ( eval.eol <= now ) {
 			_cache.remove(org);
 			continue;
 		}
+		*/
 
 		if ( !eval.dirty) {
 			// Nothing to do
@@ -368,11 +468,9 @@ void App::handleTimeout() {
 
 	NotifierMessagePtr nmsg = Notifier::GetMessage();
 	if ( nmsg ) {
-		if ( _settings.test ) {
-			SEISCOMP_DEBUG("timeout at %s resulted in %d notifiers",
-			               now.iso(), nmsg->size());
-		}
-		else {
+		SEISCOMP_DEBUG("timeout at %s resulted in %d notifiers",
+		               now.iso(), nmsg->size());
+		if ( !_settings.test ) {
 			connection()->send(nmsg.get());
 		}
 	}
@@ -480,10 +578,31 @@ void App::handleMessage(Message *msg) {
 
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-void App::addObject(const std::string &, Object *obj) {
-	auto org = DataModel::Origin::Cast(obj);
+void App::addObject(const std::string &parentID, Object *obj) {
+	auto org = Origin::Cast(obj);
 	if ( org ) {
+		auto tmp = _cache.get<Origin>(org->publicID());
+		if ( !tmp ) {
+			_cache.feed(org);
+		}
+		else {
+			org = tmp.get();
+		}
+
 		addAssociations(org);
+	}
+
+	auto mag = Magnitude::Cast(obj);
+	if ( mag ) {
+		auto org = _cache.get<Origin>(parentID);
+		if ( org ) {
+			auto eval = _associationTable.get(org.get());
+			if ( eval ) {
+				SEISCOMP_DEBUG("%s: set dirty because of new %s magnitude",
+				               org->publicID(), mag->type());
+				eval->dirty = true;
+			}
+		}
 	}
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
@@ -493,7 +612,7 @@ void App::addObject(const std::string &, Object *obj) {
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 void App::removeObject(const std::string &, Object *obj) {
-	auto org = DataModel::Origin::Cast(obj);
+	auto org = Origin::Cast(obj);
 	if ( org ) {
 		_cache.remove(org);
 	}
@@ -504,8 +623,19 @@ void App::removeObject(const std::string &, Object *obj) {
 
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-void App::updateObject(const std::string &, Object *obj) {
-	//
+void App::updateObject(const std::string &parentID, Object *obj) {
+	auto mag = Magnitude::Cast(obj);
+	if ( mag ) {
+		auto org = Origin::Find(parentID);
+		if ( org ) {
+			auto eval = _associationTable.get(org);
+			if ( eval ) {
+				SEISCOMP_DEBUG("%s: set dirty because of updated %s magnitude",
+				               org->publicID(), mag->type());
+				eval->dirty = true;
+			}
+		}
+	}
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
@@ -578,6 +708,8 @@ void App::addAssociations(const std::string &sid, const EnvelopeBuffer &buffer) 
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 void App::addAssociations(Origin *org) {
+	SEISCOMP_DEBUG("%s: add associations", org->publicID());
+
 	auto *eval = _associationTable.insert(org);
 	eval->eol = org->time().value() + _settings.envelopes.maxDelay;
 
@@ -597,6 +729,8 @@ void App::addAssociations(Origin *org) {
 	// Update the end-of-lifetime timestamp according to the maximum
 	// expected traveltime scaled by postArrivalTimeShare.
 	eval->eol += Core::TimeSpan(maxTravelTime * _settings.postArrivalTimeShare);
+
+	SEISCOMP_DEBUG("%s: eol = %s", org->publicID(), eval->eol.iso());
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
@@ -805,12 +939,17 @@ void App::process(Origin *org, Evaluation &eval) {
 			org->add(cmt);
 			touch(org);
 			org->update();
+			SEISCOMP_DEBUG("%s: add comment %s", org->publicID(), _settings.commentID);
+		}
+		else {
+			SEISCOMP_DEBUG("%s: update comment %s", org->publicID(), _settings.commentID);
 		}
 
 		cmt->setText(toString(eval.gof));
 		cmt->update();
 	}
 	else if ( cmt ) {
+		SEISCOMP_DEBUG("%s: remove comment %s", org->publicID(), _settings.commentID);
 		org->remove(cmt);
 		touch(org);
 		org->update();
@@ -825,12 +964,17 @@ void App::process(Origin *org, Evaluation &eval) {
 			org->add(cmt);
 			touch(org);
 			org->update();
+			SEISCOMP_DEBUG("%s: add comment %s", org->publicID(), _settings.commentMagID);
+		}
+		else {
+			SEISCOMP_DEBUG("%s: update comment %s", org->publicID(), _settings.commentMagID);
 		}
 
 		cmt->setText(eval.bestMagnitude);
 		cmt->update();
 	}
 	else if ( cmt ) {
+		SEISCOMP_DEBUG("%s: remove comment %s", org->publicID(), _settings.commentMagID);
 		org->remove(cmt);
 		touch(org);
 		org->update();
@@ -1090,10 +1234,6 @@ bool App::playback() {
 			return env1->timestamp() < env2->timestamp();
 		});
 	}
-	else {
-		SEISCOMP_ERROR("No record source defined");
-		return false;
-	}
 
 	// Read event parameters
 	if ( !_settings.epFile.empty() ) {
@@ -1119,17 +1259,48 @@ bool App::playback() {
 		sort(notifiers.begin(), notifiers.end(), [](const auto &n1, const auto &n2) {
 			return n1.second < n2.second;
 		});
+
+		if ( !notifiers.empty() ) {
+			set<string> magTypes;
+			auto oldSize = notifiers.size();
+			auto it = notifiers.begin();
+			auto last_it = it++;
+			for ( ; it != notifiers.end(); ) {
+				auto stamag = StationMagnitude::Cast((*it->first->begin())->object());
+				if ( stamag ) {
+					magTypes.insert(stamag->type());
+				}
+
+				if ( last_it->second == it->second ) {
+					last_it->first->attach(*it->first->begin());
+					it = notifiers.erase(it);
+				}
+				else {
+					last_it = it;
+					++it;
+				}
+			}
+
+			if ( notifiers.size() < oldSize ) {
+				SEISCOMP_INFO("Notifiers compressed by %d%%",
+				              100 - notifiers.size() * 100 / oldSize);
+			}
+
+			SEISCOMP_INFO("Magnitude types: %s", Core::join(magTypes, ", "));
+		}
 	}
 
-	OPT(Time) earliestTime;
+	OPT(Time) earliestTime, latestTime;
 
 	if ( !envelopes.empty() ) {
 		earliestTime = envelopes.front()->timestamp();
+		latestTime = envelopes.back()->timestamp();
 		SEISCOMP_DEBUG("Envelopes start at %s", envelopes.front()->timestamp().iso());
 	}
 
 	if ( !notifiers.empty() ) {
-		earliestTime = min(*earliestTime, notifiers.front().second);
+		earliestTime = earliestTime ? min(*earliestTime, notifiers.front().second) : notifiers.front().second;
+		latestTime = latestTime ? max(*latestTime, notifiers.back().second) : notifiers.back().second;
 		SEISCOMP_DEBUG("Notifiers start at %s", notifiers.front().second.iso());
 	}
 
@@ -1138,23 +1309,18 @@ bool App::playback() {
 		return false;
 	}
 
+	SEISCOMP_INFO("Playback duration: %s", (*latestTime - *earliestTime).toString());
+
 	auto timeOffset = Time::UTC() - *earliestTime;
 
 	thread envThread, epThread;
 
 	if ( !envelopes.empty() ) {
-		auto envTimeOffset = timeOffset;
-
-		for ( auto &env : envelopes ) {
-			env->setTimestamp(env->timestamp() + timeOffset);
-		}
-		envTimeOffset = TimeSpan();
-
 		envThread = thread([&]() {
 			for ( auto &env : envelopes ) {
 				unique_lock lock(_mutexAlert);
 
-				auto delay = (env->timestamp() + envTimeOffset - Time::UTC()).repr();
+				auto delay = (env->timestamp() + timeOffset - Time::UTC()).repr();
 				if ( delay.count() > 0 ) {
 					_signalAlert.wait_for(lock, delay, [this]() { return isExitRequested(); });
 				}
@@ -1163,16 +1329,19 @@ bool App::playback() {
 					break;
 				}
 
+				if ( _settings.shiftTimes ) {
+					env->setTimestamp(env->timestamp() + timeOffset);
+				}
+
 				Core::DataMessagePtr msg = new Core::DataMessage;
 				msg->attach(env.get());
 
-				if ( _settings.test ) {
-					cout << env->timestamp().iso() << " "
-					     << env->envelopeChannel(0)->waveformID() << " "
-					     << env->envelopeChannel(0)->envelopeValue(0)->value()
-					     << endl;
-				}
-				else {
+				cout << env->timestamp().iso() << " "
+				     << env->envelopeChannel(0)->waveformID() << " "
+				     << env->envelopeChannel(0)->envelopeValue(0)->value()
+				     << endl;
+
+				if ( !_settings.test ) {
 					connection()->send("AMPLITUDE", msg.get());
 				}
 			}
@@ -1181,10 +1350,10 @@ bool App::playback() {
 
 	if ( !notifiers.empty() ) {
 		epThread = thread([&]() {
-			for ( auto &n : notifiers ) {
+			for ( auto &nitem : notifiers ) {
 				unique_lock lock(_mutexAlert);
 
-				auto delay = (n.second + timeOffset - Time::UTC()).repr();
+				auto delay = (nitem.second + timeOffset - Time::UTC()).repr();
 				if ( delay.count() > 0 ) {
 					_signalAlert.wait_for(lock, delay, [this]() { return isExitRequested(); });
 				}
@@ -1193,11 +1362,34 @@ bool App::playback() {
 					break;
 				}
 
-				if ( _settings.test ) {
-					cerr << n.second.iso() << " " << (*n.first->begin())->className() << endl;
+				if ( _settings.shiftTimes ) {
+					nitem.second += timeOffset;
 				}
-				else {
-					connection()->send(n.first.get());
+
+				cerr << nitem.second.iso() << " "
+				     << nitem.first->size() << ":";
+				unordered_map<string, size_t> counts;
+				for ( auto n : *nitem.first ) {
+					++counts[n->object()->className()];
+					if ( _settings.shiftTimes ) {
+						if ( Origin::Cast(n->object()) ) {
+							retouch(*static_cast<Origin*>(n->object()), nitem.second);
+							static_cast<Origin*>(n->object())->setTime(
+								static_cast<Origin*>(n->object())->time().value() + timeOffset
+							);
+						}
+						else if ( Magnitude::Cast(n->object()) ) {
+							retouch(*static_cast<Magnitude*>(n->object()), nitem.second);
+						}
+					}
+				}
+				for ( auto &[classname, count] : counts ) {
+					cerr << " " << count << " x " << classname;
+				}
+				cerr << endl;
+
+				if ( !_settings.test ) {
+					connection()->send(nitem.first.get());
 				}
 			}
 		});
