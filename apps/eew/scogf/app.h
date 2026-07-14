@@ -115,7 +115,8 @@ class App : public Seiscomp::Client::Application {
 		void addAssociations(Seiscomp::DataModel::Origin *org);
 		void process(Seiscomp::DataModel::Origin *org, Seiscomp::IO::RecordStream *rs);
 		void process(Seiscomp::DataModel::Origin *org, Evaluation &eval);
-		double compute(Seiscomp::DataModel::Origin *org, const Seiscomp::DataModel::Magnitude *mag);
+		double compute(Seiscomp::DataModel::Origin *org, 
+		               const Seiscomp::DataModel::Magnitude *mag, int *stationCount = nullptr);
 		double compute(Seiscomp::DataModel::Origin *org, double mag, int *stationCount = nullptr);
 
 

@@ -870,7 +870,8 @@ void App::process(Origin *org, Evaluation &eval) {
 		      m < _settings.envelopeMagnitude.maximum;
 		      m += _settings.envelopeMagnitude.spacing ) {
 			auto gof = compute(org, m, &stationCount);
-			if ( !envMagGOF || (*envMagGOF < gof) ) {
+			if ( stationCount >= _settings.minimumStations &&
+			     (!envMagGOF || (*envMagGOF < gof)) ) {
 				envMagGOF = gof;
 				envMagValue = m;
 				envMagStationCount = stationCount;
@@ -917,8 +918,9 @@ void App::process(Origin *org, Evaluation &eval) {
 			eval.gof = *envMagGOF;
 			eval.bestMagnitude = envMag->publicID();
 
-			SEISCOMP_DEBUG("%s/%s: M=%f, GOF=%f", org->publicID(), envMag->type(),
-			               envMag->magnitude().value(), *envMagGOF);
+			SEISCOMP_DEBUG("%s/%s: M=%f, GOF=%f (stations %d)", org->publicID(),
+			               envMag->type(), envMag->magnitude().value(), *envMagGOF,
+			               envMag->stationCount());
 		}
 	}
 
@@ -929,13 +931,15 @@ void App::process(Origin *org, Evaluation &eval) {
 			continue;
 		}
 
-		auto gof = compute(org, mag);
-		if ( gof > eval.gof ) {
+		int stationCount;
+		auto gof = compute(org, mag, &stationCount);
+		if ( stationCount >= _settings.minimumStations && gof > eval.gof ) {
 			eval.gof = gof;
 			eval.bestMagnitude = mag->publicID();
 		}
 
-		SEISCOMP_DEBUG("%s/%s: GOF=%f", org->publicID(), mag->type(), gof);
+		SEISCOMP_DEBUG("%s/%s: M=%f, GOF=%f (stations %d)", org->publicID(), 
+		               mag->type(), mag->magnitude().value(), gof, stationCount);
 	}
 
 	SEISCOMP_DEBUG("%s: GOF=%f, best mag=%s", org->publicID(), eval.gof, eval.bestMagnitude);
@@ -997,9 +1001,9 @@ void App::process(Origin *org, Evaluation &eval) {
 
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-double App::compute(Origin *org, const Magnitude *mag) {
+double App::compute(Origin *org, const Magnitude *mag, int *stationCount) {
 	SEISCOMP_DEBUG("Compute %s %s %s", org->publicID(), mag->publicID(), mag->type());
-	return compute(org, mag->magnitude().value());
+	return compute(org, mag->magnitude().value(), stationCount);
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 

@@ -13,7 +13,7 @@
 				The maximum station distance in degrees.
 				</description>
 			</parameter>
-			<parameter name="minimumStations" type="int" default="0">
+			<parameter name="minimumStations" type="int" default="1">
 				<description>
 				The minimum number of stations required to compute and populate the
 				goodness of fit.
