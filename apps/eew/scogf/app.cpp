@@ -1030,7 +1030,9 @@ double App::compute(Origin *org, double mag, int *stationCount) {
 				pgv = _prediction.pgv(org, mag, assoc->dist);
 				scale = pgv;
 			}
-			catch ( ... ) {}
+			catch ( exception &e ) {
+				SEISCOMP_WARNING("No pgv, assume 1: %s", e.what());
+			}
 
 			DoubleArrayPtr pred = DoubleArray::Cast(array);
 			if ( !pred ) {
