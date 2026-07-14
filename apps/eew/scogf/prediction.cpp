@@ -324,42 +324,48 @@ double Prediction::pgv(const Seiscomp::DataModel::Origin *org,
                        double mag, double dist) const {
 	for ( const auto &f : _zones.features() ) {
 		if ( f->contains({ org->latitude().value(), org->longitude().value() }) ) {
-			SEISCOMP_DEBUG("%s: determined zone: %s", org->publicID(), f->name());
 
 			auto it = _gmm.find(f->name());
 			if ( it == _gmm.end() ) {
-				SEISCOMP_DEBUG("%s: no zone predictions found", org->publicID());
+				SEISCOMP_DEBUG("%s: no zone (%s) predictions found",
+				               org->publicID(), f->name());
 				break;
 			}
 
 			const auto &magnitudes = it->second;
 			auto mit = magnitudes.lower_bound(mag);
 			if ( mit == magnitudes.end() ) {
-				SEISCOMP_DEBUG("%s: magnitude out of range: %f", org->publicID(), mag);
-				break;
+				// mag is greater than all keys, select the biggest one
+				mit--;
 			}
-
-			if ( mit->first > mag ) {
-				if ( mit != magnitudes.begin() ) {
-					--mit;
+			else if (mit != magnitudes.begin()) {
+				// find the closest mag between the greater and smaller neighbours
+				auto prev = mit;
+				--prev;
+				if ((mit->first - mag) > (mag - prev->first))
+				{
+					mit = prev;
 				}
 			}
 
 			const auto &distances = mit->second;
 			auto dit = distances.lower_bound(dist);
 			if ( dit == distances.end() ) {
-				SEISCOMP_DEBUG("%s: distance out of range: %f", org->publicID(), dist);
-				break;
+				// dist is greater than all keys, select the biggest one
+				dit--;
 			}
-
-			if ( dit->first > dist ) {
-				if ( dit != distances.begin() ) {
-					--dit;
+			else if (dit != distances.begin()) {
+				// find the closest distance between the greater and smaller neighbours
+				auto prev = dit;
+				--prev;
+				if ((dit->first - dist) > (dist - prev->first))
+				{
+					dit = prev;
 				}
 			}
 
-			SEISCOMP_DEBUG("%s: pgv: %s, %f, %f = %f", org->publicID(), f->name(),
-			               mag, dist, dit->second);
+			SEISCOMP_DEBUG("%s: pgv: %s, %f (%f), %f (%f) = %f", org->publicID(),
+			               f->name(), mit->first, mag, dit->first, dist, dit->second);
 			return dit->second;
 		}
 	}
