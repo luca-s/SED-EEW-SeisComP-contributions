@@ -70,6 +70,38 @@
 					</description>
 				</parameter>
 			</group>
+			<group name="envelopeMagnitude">
+				<description>
+				This groups controls the computation of the envelope magnitude for each
+				processed origin. The envelope magnitude is expressed as the maximum GOF
+				computed over a magnitude interval with a defined spacing.
+				</description>
+				<parameter name="enable" type="boolean" default="false">
+					<description>
+					Enable flag.
+					</description>
+				</parameter>
+				<parameter name="type" type="string" default="Menv">
+					<description>
+					The type of the envelope magnitude.
+					</description>
+				</parameter>
+				<parameter name="minimum" type="double" default="3.5">
+					<description>
+					The minimum of the magnitude interval.
+					</description>
+				</parameter>
+				<parameter name="maximum" type="double" default="5.5">
+					<description>
+					The maximum of the magnitude interval.
+					</description>
+				</parameter>
+				<parameter name="spacing" type="double" default="0.5">
+					<description>
+					The spacing of the magnitude interval.
+					</description>
+				</parameter>
+			</group>
 			<group name="sensorLocations">
 				<parameter name="include" type="list:string">
 					<description>
