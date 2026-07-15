@@ -132,9 +132,12 @@ class Prediction {
 	//  Private members
 	// ----------------------------------------------------------------------
 	private:
-		using DistanceMap = std::map<double, double>;
-		using MagnitudeMap = std::map<double, DistanceMap>;
-		using GMM = std::map<std::string, MagnitudeMap>;
+		using GMMDistanceMap = std::map<double, double>;
+		using GMMMagnitudeMap = std::map<double, GMMDistanceMap>;
+		using GMM = std::map<std::string, GMMMagnitudeMap>;
+		using EnvDistanceMap = std::map<double, std::string>;
+		using EnvMagnitudeMap = std::map<double, EnvDistanceMap>;
+		using Envelope = std::map<std::string, EnvMagnitudeMap>;
 
 		struct ChannelBinding {
 			std::string soilClass;
@@ -148,6 +151,7 @@ class Prediction {
 		std::vector<std::string>     _soilClasses;
 		Seiscomp::Geo::GeoFeatureSet _zones;
 		GMM                          _gmm;
+		Envelope                     _envlp;
 		ChannelBindings              _bindings;
 };
 

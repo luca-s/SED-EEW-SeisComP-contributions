@@ -71,18 +71,58 @@ void Prediction::setSource(const std::string &source) {
 	_zones.clear();
 	_bindings.clear();
 	_gmm.clear();
+	_envlp.clear();
 
 	if ( !fs::exists(p) ) {
 		throw runtime_error(source + ": path does not exist");
 	}
 
+	// scan envelopes directory structure
 	_envelopePath = p / "envelopes";
-	if ( !fs::exists(_envelopePath) ) {
+	if ( !fs::exists(_envelopePath) || !fs::is_directory(_envelopePath) ) {
 		throw runtime_error(source + "/envelope: path does not exist");
 	}
 
-	for ( const auto &dirEntry : fs::directory_iterator{p / "envelopes"} ) {
-		_soilClasses.push_back(dirEntry.path().filename());
+	auto tryParseDouble = [](const std::string& str, double& value) -> bool {
+		std::stringstream ss(str);
+		return (ss >> value) && ss.eof();
+	};
+
+	// Iterate through Level 1: Soil Class (e.g., "R")
+	for ( const auto &soilDir : fs::directory_iterator{p / "envelopes"} ) {
+		if ( !soilDir.is_directory() ) continue;
+		std::string soilClass = soilDir.path().filename().string();
+		_soilClasses.push_back(soilClass);
+
+		// Iterate through Level 2: Magnitude (e.g., "1", "1.1", "1.2")
+		for ( const auto &magDir : fs::directory_iterator{soilDir.path()} ) {
+			if ( !magDir.is_directory() ) continue;
+
+			double magnitude = 0.0;
+			if ( !tryParseDouble(magDir.path().filename().string(), magnitude) ) {
+				SEISCOMP_DEBUG("Envelopes: skip invalid magnitude %s", magDir.path().string());
+				continue;
+			}
+
+			// Iterate through Level 3: Distance (e.g., "2", "3", "4"...)
+			for ( const auto &distDir : fs::directory_iterator{magDir.path()} ) {
+				if ( !distDir.is_directory() ) continue;
+
+				double distance = 0.0;
+				if ( !tryParseDouble(distDir.path().filename().string(), distance) ) {
+					SEISCOMP_DEBUG("Envelopes: skip invalid distance %s", distDir.path().string());
+					continue;
+				}
+
+				// Check if the target file 'V_H.npy' exists inside this folder
+				fs::path targetFile = distDir.path() / "V_H.npy";
+				if ( fs::exists(targetFile) && fs::is_regular_file(targetFile) ) {
+
+					// Store the full path of the file
+					_envlp[soilClass][magnitude][distance] = fs::absolute(targetFile).string();
+				}
+			}
+		}
 	}
 
 	auto cnt = _zones.readFile(p / "GMMpolygon.bna", nullptr);
@@ -98,6 +138,7 @@ void Prediction::setSource(const std::string &source) {
 		_zoneNames.push_back(zone->name());
 	}
 
+	// Read and parse GMM data
 	ifstream ifs;
 	ifs.open(p / "GMM.csv");
 	if ( !ifs ) {
@@ -278,18 +319,51 @@ void Prediction::setDefaultSoilClass(const string &defaultSoilClass) {
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 Seiscomp::Array *Prediction::trace(const std::string &soilClass, double mag, double dist) {
-	int imag = mag * 10;
-	string pmag = imag % 10 == 0
-		?
-		toString(imag / 10)
-		:
-		toString(imag / 10) + "." + toString(imag % 10)
-	;
+
+	auto it = _envlp.find(soilClass);
+	if ( it == _envlp.end() ) {
+		SEISCOMP_WARNING("No soil class (%s) envelopes found", soilClass);
+		return nullptr;
+	}
+
+	const auto &magnitudes = it->second;
+	auto mit = magnitudes.lower_bound(mag);
+	if ( mit == magnitudes.end() ||
+	    (mit == magnitudes.begin() && mit->first > mag) ) {
+		// mag is smaller or greater than all keys
+		SEISCOMP_DEBUG("No prediction envelope available for magnitude %f", mag);
+		return nullptr;
+	}
+	else if ( mit != magnitudes.begin() ) {
+		// find the closest mag between the greater and smaller neighbours
+		auto prev = mit;
+		--prev;
+		if ( (mit->first - mag) > (mag - prev->first) ) {
+			mit = prev;
+		}
+	}
+
+	const auto &distances = mit->second;
+	auto dit = distances.lower_bound(dist);
+	if ( dit == distances.end()  ||
+	    (dit == distances.begin() && dit->first > dist) ) { 
+		// dist is smaller or greater than all keys
+		SEISCOMP_DEBUG("No prediction envelope available for distance %f", dist);
+		return nullptr;
+	}
+	else if ( dit != distances.begin() ) {
+		// find the closest distance between the greater and smaller neighbours
+		auto prev = dit;
+		--prev;
+		if ( (dit->first - dist) > (dist - prev->first) ) {
+			dit = prev;
+		}
+	}
+
+	//SEISCOMP_DEBUG("Trying to read prediction %s", dit->second);
 
 	// TODO: Option to implement a cache in the future.
-	return loadNpy(
-		_envelopePath / soilClass / pmag / toString(static_cast<int>(dist)) / "V_H.npy"
-	);
+	return loadNpy(dit->second);
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
