@@ -624,18 +624,8 @@ void App::removeObject(const std::string &, Object *obj) {
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 void App::updateObject(const std::string &parentID, Object *obj) {
-	auto mag = Magnitude::Cast(obj);
-	if ( mag ) {
-		auto org = Origin::Find(parentID);
-		if ( org ) {
-			auto eval = _associationTable.get(org);
-			if ( eval ) {
-				SEISCOMP_DEBUG("%s: set dirty because of updated %s magnitude",
-				               org->publicID(), mag->type());
-				eval->dirty = true;
-			}
-		}
-	}
+	// Just forward it to addObject and handle the update in the same way.
+	addObject(parentID, obj);
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
