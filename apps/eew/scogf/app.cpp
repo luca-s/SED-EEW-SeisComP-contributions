@@ -281,6 +281,20 @@ bool App::validateParameters() {
 		}
 	}
 
+	_ttt = TravelTimeTableInterface::Create(_settings.tttType.c_str());
+	if ( !_ttt ) {
+		SEISCOMP_ERROR("Failed to create TravelTimeTableInterface '%s'",
+		               _settings.tttType.c_str());
+		return false;
+	}
+
+	if ( !_ttt->setModel(_settings.tttTable) ) {
+		SEISCOMP_ERROR("Failed to set table %s for TravelTimeTableInterface '%s'",
+		               _settings.tttTable.c_str(),
+		               _settings.tttType.c_str());
+		return false;
+	}
+
 	return true;
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
@@ -650,7 +664,7 @@ Association *App::addAssociation(Origin *org,
 		return nullptr;
 	}
 
-	auto ttimes = _ttt.compute(org->latitude().value(), org->longitude().value(),
+	auto ttimes = _ttt->compute(org->latitude().value(), org->longitude().value(),
 	                           depth,
 	                           buffer.lat, buffer.lon, buffer.elev);
 	if ( !ttimes ) {

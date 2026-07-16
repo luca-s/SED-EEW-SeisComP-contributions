@@ -54,6 +54,18 @@
 				type of the maximum GOF value.
 				</description>
 			</parameter>
+			<parameter name="tableType" type="string" default="LOCSAT" values="homogeneous,libtau,LOCSAT">
+				<description>
+				Type of travel-time interface. Also consider
+				&quot;tableModel&quot;!
+				</description>
+			</parameter>
+			<parameter name="table" type="string" default="iasp91">
+				<description>
+				The travel-time model to be used. The availability of models depends on
+				&quot;tableType&quot;
+				</description>
+			</parameter>
 			<group name="envelopes">
 				<parameter name="bufferSize" type="int" unit="s" default="1800">
 					<description>

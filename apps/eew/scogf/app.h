@@ -142,6 +142,8 @@ class App : public Seiscomp::Client::Application {
 				& cfg(commentMagID, "commentMagID")
 				& cfg(envelopes, "envelopes")
 				& cfg(sensorLocations, "sensorLocations")
+				& cfg(tttType, "tableType")
+				& cfg(tttTable, "table")
 				& cli(recordStreamURL, "Input", "record-url,I",
 					"The RecordStream source URL. Format: [service://]location[#type]. "
 					"'service' is the name of the RecordStream driver. If 'service' is "
@@ -237,6 +239,8 @@ class App : public Seiscomp::Client::Application {
 			bool                     dump{false};
 			bool                     playback{false};
 			bool                     shiftTimes{false};
+			std::string              tttType;
+			std::string              tttTable;
 		} _settings;
 
 		Cache                        _cache;
@@ -244,7 +248,7 @@ class App : public Seiscomp::Client::Application {
 		AssociationTable             _associationTable;
 		Firewall                     _slocFirewall;
 		Prediction                   _prediction;
-		Seiscomp::TravelTimeTable    _ttt;
+		Seiscomp::TravelTimeTableInterfacePtr _ttt;
 
 		std::mutex                   _mutexAlert;
 		std::condition_variable      _signalAlert;
