@@ -458,26 +458,33 @@ void App::handleTimeout() {
 
 	auto origins = _associationTable.origins();
 
-	// Iteration must be done this way because the origins map is subject
-	// to modifications when an origin is removed from the cache.
-	for ( auto it = origins.begin(); it != origins.end(); ) {
+	vector<Origin*> toDelete;
+	size_t dirtyCount = 0, updatedCount = 0;
+	for ( auto it = origins.begin(); it != origins.end(); ++it) {
 		auto *org = it->first;
 		auto &eval = it->second;
-		++it;
 
-		/*
-		if ( eval.eol <= now ) {
-			_cache.remove(org);
-			continue;
-		}
-		*/
-
-		if ( !eval.dirty) {
+		if ( !eval.dirty ) {
 			// Nothing to do
+			dirtyCount++;
 			continue;
 		}
 
+		updatedCount++;
 		process(org, eval);
+
+		if ( eval.eol <= now ) {
+			toDelete.push_back(org);
+		}
+	}
+
+	for ( auto org : toDelete ) {
+		_cache.remove(org);
+	}
+
+	if ( updatedCount > 0 || dirtyCount > 0 || toDelete.size() > 0 ) {
+		SEISCOMP_DEBUG("Associations: %zu updated, %zu removed, %zu unchanged",
+		               updatedCount, toDelete.size(), dirtyCount);
 	}
 
 	NotifierMessagePtr nmsg = Notifier::GetMessage();
