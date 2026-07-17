@@ -331,7 +331,7 @@ Seiscomp::Array *Prediction::trace(const std::string &soilClass, double mag, dou
 	if ( mit == magnitudes.end() ||
 	    (mit == magnitudes.begin() && mit->first > mag) ) {
 		// mag is smaller or greater than all keys
-		SEISCOMP_DEBUG("No prediction envelope available for magnitude %f", mag);
+		SEISCOMP_DEBUG("No prediction (%s) available for magnitude %f", soilClass, mag);
 		return nullptr;
 	}
 	else if ( mit != magnitudes.begin() ) {
@@ -348,7 +348,8 @@ Seiscomp::Array *Prediction::trace(const std::string &soilClass, double mag, dou
 	if ( dit == distances.end()  ||
 	    (dit == distances.begin() && dit->first > dist) ) { 
 		// dist is smaller or greater than all keys
-		SEISCOMP_DEBUG("No prediction envelope available for distance %f", dist);
+		SEISCOMP_DEBUG("No prediction (%s) available for distance %f (mag %f)",
+		               soilClass, dist, mag);
 		return nullptr;
 	}
 	else if ( dit != distances.begin() ) {
@@ -414,7 +415,7 @@ double Prediction::pgv(const Seiscomp::DataModel::Origin *org,
 			if ( mit == magnitudes.end() ||
 			    (mit == magnitudes.begin() && mit->first > mag) ) {
 				// mag is smaller or greater than all keys
-				SEISCOMP_DEBUG("No prediction envelope available for magnitude %f", mag);
+				SEISCOMP_DEBUG("No pgv(%s) available for magnitude %f", f->name(), mag);
 				continue;
 			}
 			else if ( mit != magnitudes.begin() ) {
@@ -431,7 +432,8 @@ double Prediction::pgv(const Seiscomp::DataModel::Origin *org,
 			if ( dit == distances.end()  ||
 			    (dit == distances.begin() && dit->first > dist) ) {
 				// dist is smaller or greater than all keys
-				SEISCOMP_DEBUG("No prediction envelope available for distance %f", dist);
+				SEISCOMP_DEBUG("No pgv(%s) available for distance %f (mag %f)",
+				                f->name(), dist, mag);
 				continue;
 			}
 			else if ( dit != distances.begin() ) {

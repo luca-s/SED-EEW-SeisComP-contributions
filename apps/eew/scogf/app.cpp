@@ -459,14 +459,14 @@ void App::handleTimeout() {
 	auto origins = _associationTable.origins();
 
 	vector<Origin*> toDelete;
-	size_t dirtyCount = 0, updatedCount = 0;
+	size_t unchangedCount = 0, updatedCount = 0;
 	for ( auto it = origins.begin(); it != origins.end(); ++it) {
 		auto *org = it->first;
 		auto &eval = it->second;
 
 		if ( !eval.dirty ) {
 			// Nothing to do
-			dirtyCount++;
+			unchangedCount++;
 			continue;
 		}
 
@@ -482,9 +482,9 @@ void App::handleTimeout() {
 		_cache.remove(org);
 	}
 
-	if ( updatedCount > 0 || dirtyCount > 0 || toDelete.size() > 0 ) {
+	if ( updatedCount > 0 || unchangedCount > 0 || toDelete.size() > 0 ) {
 		SEISCOMP_DEBUG("Associations: %zu updated, %zu removed, %zu unchanged",
-		               updatedCount, toDelete.size(), dirtyCount);
+		               updatedCount, toDelete.size(), unchangedCount);
 	}
 
 	NotifierMessagePtr nmsg = Notifier::GetMessage();
@@ -719,7 +719,8 @@ void App::addAssociations(const std::string &sid, const EnvelopeBuffer &buffer) 
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 void App::addAssociations(Origin *org) {
-	SEISCOMP_DEBUG("%s: add associations", org->publicID());
+	SEISCOMP_DEBUG("%s (mags %d): add associations",
+	               org->publicID(), org->magnitudeCount());
 
 	auto *eval = _associationTable.insert(org);
 	eval->eol = org->time().value() + _settings.envelopes.maxDelay;
@@ -741,7 +742,8 @@ void App::addAssociations(Origin *org) {
 	// expected traveltime scaled by postArrivalTimeShare.
 	eval->eol += Core::TimeSpan(maxTravelTime * _settings.postArrivalTimeShare);
 
-	SEISCOMP_DEBUG("%s: eol = %s", org->publicID(), eval->eol.iso());
+	SEISCOMP_DEBUG("%s: eol = %s num associations %zu", org->publicID(),
+	               eval->eol.iso(), _associationTable.count(org));
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
@@ -858,6 +860,8 @@ void App::process(Origin *org, IO::RecordStream *rs) {
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 void App::process(Origin *org, Evaluation &eval) {
+	SEISCOMP_DEBUG("Process %s num mags %d num associations %zu", org->publicID(),
+	                org->magnitudeCount(), _associationTable.count(org));
 	eval.bestMagnitude = {};
 	eval.gof = -1;
 
