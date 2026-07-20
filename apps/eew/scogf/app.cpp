@@ -733,6 +733,7 @@ void App::addAssociations(Origin *org) {
 
 	auto *eval = _associationTable.insert(org);
 	eval->eol = org->time().value() + _settings.envelopes.maxDelay;
+	eval->dirty = true; // if this is an update eval->dirty may be false
 
 	double maxTravelTime = 0;
 
