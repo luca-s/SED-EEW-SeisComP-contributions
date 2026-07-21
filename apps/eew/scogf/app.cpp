@@ -670,6 +670,9 @@ Association *App::addAssociation(Origin *org,
 	catch ( ... ) {
 		return nullptr;
 	}
+	if ( !_settings.tttAllowNegativeDepths && depth < 0) {
+		depth = 0;
+	}
 
 	TravelTimeList* ttimes;
 	try {

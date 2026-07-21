@@ -145,6 +145,7 @@ class App : public Seiscomp::Client::Application {
 				& cfg(sensorLocations, "sensorLocations")
 				& cfg(tttType, "tableType")
 				& cfg(tttTable, "table")
+				& cfg(tttAllowNegativeDepths, "tableAllowNegativeDepths")
 				& cli(recordStreamURL, "Input", "record-url,I",
 					"The RecordStream source URL. Format: [service://]location[#type]. "
 					"'service' is the name of the RecordStream driver. If 'service' is "
@@ -242,6 +243,7 @@ class App : public Seiscomp::Client::Application {
 			bool                     shiftTimes{false};
 			std::string              tttType;
 			std::string              tttTable;
+			bool                     tttAllowNegativeDepths;
 		} _settings;
 
 		Cache                        _cache;

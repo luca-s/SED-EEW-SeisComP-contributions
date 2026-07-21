@@ -66,6 +66,14 @@
 				&quot;tableType&quot;
 				</description>
 			</parameter>
+			<parameter name="tableAllowNegativeDepths" type="bool" default="false">
+				<description>
+				Indicates whether the travel-time model supports events with negative
+				depths. If false, negative event depths are queried as depth 0. If true,
+				the travel-time model is queried using the event's actual depth,
+				including negative depths.
+				</description>
+			</parameter>
 			<group name="envelopes">
 				<parameter name="bufferSize" type="int" unit="s" default="1800">
 					<description>
