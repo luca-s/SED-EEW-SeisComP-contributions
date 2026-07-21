@@ -671,9 +671,15 @@ Association *App::addAssociation(Origin *org,
 		return nullptr;
 	}
 
-	auto ttimes = _ttt->compute(org->latitude().value(), org->longitude().value(),
-	                           depth,
-	                           buffer.lat, buffer.lon, buffer.elev);
+	TravelTimeList* ttimes;
+	try {
+		ttimes = _ttt->compute(org->latitude().value(), org->longitude().value(),
+		                       depth, buffer.lat, buffer.lon, buffer.elev);
+	}
+	catch( exception &e ) {
+		SEISCOMP_DEBUG("%s", e.what());
+		return nullptr;
+	}
 	if ( !ttimes ) {
 		return nullptr;
 	}
