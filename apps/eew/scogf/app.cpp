@@ -884,7 +884,7 @@ void App::process(Origin *org, Evaluation &eval) {
 		      m < _settings.envelopeMagnitude.maximum;
 		      m += _settings.envelopeMagnitude.spacing ) {
 			auto gof = compute(org, m, &stationCount);
-			if ( stationCount >= _settings.minimumStations &&
+			if ( isfinite(gof) && stationCount >= _settings.minimumStations &&
 			     (!envMagGOF || (*envMagGOF < gof)) ) {
 				envMagGOF = gof;
 				envMagValue = m;
@@ -947,7 +947,8 @@ void App::process(Origin *org, Evaluation &eval) {
 
 		int stationCount;
 		auto gof = compute(org, mag, &stationCount);
-		if ( stationCount >= _settings.minimumStations && gof > eval.gof ) {
+		if ( isfinite(gof) && stationCount >= _settings.minimumStations &&
+		     gof > eval.gof ) {
 			eval.gof = gof;
 			eval.bestMagnitude = mag->publicID();
 		}
