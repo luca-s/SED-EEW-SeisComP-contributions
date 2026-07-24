@@ -1051,6 +1051,10 @@ double App::compute(Origin *org, double mag, int *stationCount) {
 		if ( !assoc->lastMag
 		  || !_prediction.equal(*assoc->lastMag, mag) ) {
 			// A dirty association requires a recomputation
+
+			assoc->correlation = -1;
+			assoc->lastMag = Seiscomp::Core::None;
+
 			ArrayPtr array;
 			try {
 				array = _prediction.get(sid, mag, assoc->dist);
@@ -1174,22 +1178,21 @@ double App::compute(Origin *org, double mag, int *stationCount) {
 			// Pearson correlation coefficient
 			// Ref: https://en.wikipedia.org/wiki/Pearson_correlation_coefficient
 			double corr = max(0.0, (count * sumXY - sumX * sumY) / sqrt(count * sumX2 - sumX * sumX) / sqrt(count * sumY2 - sumY * sumY));
-			assoc->correlation = sqrt(corr * amplitudeFit);
+			double sgf = sqrt(corr * amplitudeFit); // Station Goodness of Fit
+
+			if ( !isfinite(sgf) ) {
+				SEISCOMP_DEBUG("%s: [%d(%d):%d#%d] dist=%f, mag=%f, gMaxPred=%f, "
+						"scale=pgv(%f)*amplification(%f)/max(%f)=%f, maxObs=%f, maxPred=%f, "
+						"ampFit=%f, corr=%f, SGF=%f (sumX=%f, sumX2=%f, sumY=%f, sumY2=%f, "
+						"sumXY=%f)",
+						sid, idx0, idx0Obs, idx1, count, assoc->dist, mag, predMax, pgv,
+						amplification, predMax, scale, maxObs, maxPred, amplitudeFit, corr,
+						sgf, sumX, sumX2, sumY, sumY2, sumXY);
+				continue;
+			}
+
+			assoc->correlation = sgf;
 			assoc->lastMag = mag;
-
-			/*
-			cerr << toString(sumX) << " " << toString(sumX2) << " " << toString(sumY)
-			     << " " << toString(sumY2) << " " << toString(sumXY) << endl;
-			*/
-
-			/*
-			SEISCOMP_DEBUG("%s: [%d(%d):%d#%d] dist=%f, mag=%f, gMaxPred=%f, "
-			               "scale=pgv(%f)*amplification(%f)/max(%f)=%f, maxObs=%f, maxPred=%f, "
-			               "ampFit=%f, corr=%f, SGF=%f",
-			               sid, idx0, idx0Obs, idx1, count, assoc->dist, mag,
-			               predMax, pgv, amplification, predMax, scale,
-			               maxObs, maxPred, amplitudeFit, corr, assoc->correlation);
-			*/
 		}
 		else {
 			// SEISCOMP_DEBUG("%s: reuse SGF=%f", sid, assoc->correlation);
@@ -1202,7 +1205,7 @@ double App::compute(Origin *org, double mag, int *stationCount) {
 		*stationCount = static_cast<int>(gofs.size());
 	}
 
-	return Math::Statistics::mean(gofs) * 100;
+	return Math::Statistics::mean(gofs) * 100; // Overall Goodness of Fit
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
