@@ -1069,15 +1069,16 @@ double App::compute(Origin *org, double mag, int *stationCount) {
 				continue;
 			}
 
-			double scale = 1.0;
 			double pgv = 1.0;
 			try {
 				pgv = _prediction.pgv(org, mag, assoc->dist);
-				scale = pgv;
 			}
 			catch ( exception &e ) {
-				SEISCOMP_WARNING("No pgv, assume 1: %s", e.what());
+				SEISCOMP_WARNING("No pgv: %s", e.what());
+				continue;
 			}
+
+			double scale = pgv;
 
 			DoubleArrayPtr pred = DoubleArray::Cast(array);
 			if ( !pred ) {
@@ -1160,7 +1161,7 @@ double App::compute(Origin *org, double mag, int *stationCount) {
 
 			bit = bitSave;
 
-			double numericScale = 1.0 / maxPred;
+			double numericScale = (maxPred == 0.) ? 1.0 : (1.0 / maxPred);
 			double sumX{0}, sumY{0}, sumX2{0}, sumY2{0}, sumXY{0};
 
 			for ( int i = 0; i < count; ++i, ++bit ) {
@@ -1188,7 +1189,13 @@ double App::compute(Origin *org, double mag, int *stationCount) {
 						sid, idx0, idx0Obs, idx1, count, assoc->dist, mag, predMax, pgv,
 						amplification, predMax, scale, maxObs, maxPred, amplitudeFit, corr,
 						sgf, sumX, sumX2, sumY, sumY2, sumXY);
-				continue;
+				if ( maxObs == 0. && maxPred == 0. ) {
+					SEISCOMP_DEBUG("maxObs and maxPred are 0. Set Station GoF to 1.");
+					sgf = 1.0;
+				}
+				else {
+					continue;
+				}
 			}
 
 			assoc->correlation = sgf;

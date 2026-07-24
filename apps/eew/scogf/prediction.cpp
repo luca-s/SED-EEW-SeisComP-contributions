@@ -451,7 +451,7 @@ double Prediction::pgv(const Seiscomp::DataModel::Origin *org,
 		}
 	}
 
-	throw runtime_error("no zone for origin");
+	throw runtime_error("no pgv for origin");
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
