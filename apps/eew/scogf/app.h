@@ -243,7 +243,7 @@ class App : public Seiscomp::Client::Application {
 			bool                     shiftTimes{false};
 			std::string              tttType;
 			std::string              tttTable;
-			bool                     tttAllowNegativeDepths;
+			bool                     tttAllowNegativeDepths{false};
 		} _settings;
 
 		Cache                        _cache;

@@ -66,7 +66,7 @@
 				&quot;tableType&quot;
 				</description>
 			</parameter>
-			<parameter name="tableAllowNegativeDepths" type="bool" default="false">
+			<parameter name="tableAllowNegativeDepths" type="boolean" default="false">
 				<description>
 				Indicates whether the travel-time model supports events with negative
 				depths. If false, negative event depths are queried as depth 0. If true,
