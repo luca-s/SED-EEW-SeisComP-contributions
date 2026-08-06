@@ -770,7 +770,7 @@ void App::process(Origin *org, IO::RecordStream *rs) {
 				continue;
 			}
 
-			if ( (rec->channelCode()[1] != 'H') || (rec->channelCode()[2] != 'X') ) {
+			if ( rec->channelCode()[2] != 'X' ) { // Combined horizontals (sceewenv)
 				continue;
 			}
 
@@ -1239,7 +1239,7 @@ bool App::playback() {
 				continue;
 			}
 
-			if ( (rec->channelCode()[1] != 'H') || (rec->channelCode()[2] != 'X') ) {
+			if ( rec->channelCode()[2] != 'X' ) { // Combined horizontals (sceewenv)
 				continue;
 			}
 
