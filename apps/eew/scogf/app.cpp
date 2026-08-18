@@ -907,6 +907,9 @@ void App::process(Origin *org, Evaluation &eval) {
 				envMag = Magnitude::Create();
 				envMag->setType(_settings.envelopeMagnitude.type);
 				envMag->setStationCount(envMagStationCount);
+				envMag->setCreationInfo(CreationInfo());
+				envMag->creationInfo().setAgencyID(agencyID());
+				envMag->creationInfo().setAuthor(author());
 				org->add(envMag);
 			}
 			else {
