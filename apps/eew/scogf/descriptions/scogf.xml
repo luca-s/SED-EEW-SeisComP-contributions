@@ -8,9 +8,18 @@
 				Duration of the object cache, effectively used for origins.
 				</description>
 			</parameter>
+			<parameter name="distancePerMagnitude" type="double" unit="degrees">
+				<description>
+				Defines the scaling factor applied per unit of magnitude to compute a
+				magnitude-dependent station search radius, which is defined as:
+				min(distancePerMagnitude * magnitude, maximumDistance).
+				This parameter is optional. If not configured, maximumDistance is used
+				directly as the station search radius, regardless of magnitude.
+				</description>
+			</parameter>
 			<parameter name="maximumDistance" type="double" default="5" unit="degrees">
 				<description>
-				The maximum station distance in degrees.
+				Defines the absolute upper limit for the station search radius.
 				</description>
 			</parameter>
 			<parameter name="minimumStations" type="int" default="1">

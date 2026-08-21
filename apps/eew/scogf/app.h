@@ -29,6 +29,7 @@
 
 
 #include <seiscomp/client/application.h>
+#include <seiscomp/core/optional.h>
 #include <seiscomp/core/timewindow.h>
 #include <seiscomp/datamodel/origin.h>
 #include <seiscomp/datamodel/publicobjectcache.h>
@@ -132,6 +133,7 @@ class App : public Seiscomp::Client::Application {
 			void accept(SettingsLinker &linker) override {
 				linker
 				& cfg(cacheSize, "cacheSize")
+				& cfg(distancePerMagnitude, "distancePerMagnitude")
 				& cfg(maximumDistance, "maximumDistance")
 				& cfg(minimumStations, "minimumStations")
 				& cfg(envelopeMagnitude, "envelopeMagnitude")
@@ -226,6 +228,7 @@ class App : public Seiscomp::Client::Application {
 
 			Seiscomp::Core::TimeSpan cacheSize{1800, 0};
 			size_t                   updateInterval{1};
+			OPT(double)              distancePerMagnitude;
 			double                   maximumDistance{5};
 			size_t                   minimumStations{0};
 			double                   preArrivalTimeWindow{0};

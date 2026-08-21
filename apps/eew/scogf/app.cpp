@@ -1032,6 +1032,13 @@ double App::compute(Origin *org, const Magnitude *mag, int *stationCount) {
 double App::compute(Origin *org, double mag, int *stationCount) {
 	vector<double> gofs;
 
+	// Optional magnitude dependent station search radius. If not configured,
+	// maximumDistance is used regardless of magnitude.
+	double cutoffDist = _settings.maximumDistance;
+	if ( _settings.distancePerMagnitude ) {
+		cutoffDist = min(*_settings.distancePerMagnitude * mag, _settings.maximumDistance);
+	}
+
 	// Do not check the eval.dirty flag as this has been done already
 	for ( const auto &[org, sid] : _associationTable.sensors(org) ) {
 		auto it = _envelopeBuffers.find(sid);
@@ -1042,6 +1049,14 @@ double App::compute(Origin *org, double mag, int *stationCount) {
 		auto buffer = it->second.get();
 		if ( !buffer || buffer->empty() ) {
 			// No envelopes
+			continue;
+		}
+
+		double dist;
+		Math::Geo::delazi(org->latitude().value(), org->longitude().value(),
+		                  buffer->lat, buffer->lon, &dist);
+		if ( dist > cutoffDist ) {
+			// station farther then cutoff distance
 			continue;
 		}
 
