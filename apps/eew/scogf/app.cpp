@@ -951,7 +951,7 @@ void App::process(Origin *org, Evaluation &eval) {
 		int stationCount;
 		auto gof = compute(org, mag, &stationCount);
 		if ( isfinite(gof) && stationCount >= _settings.minimumStations &&
-		     gof > eval.gof ) {
+		     gof >= eval.gof ) {
 			eval.gof = gof;
 			eval.bestMagnitude = mag->publicID();
 		}
