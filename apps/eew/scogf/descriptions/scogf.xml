@@ -28,7 +28,7 @@
 				goodness of fit.
 				</description>
 			</parameter>
-			<parameter name="updateInverval" type="int" default="1" unit="s">
+			<parameter name="updateInterval" type="int" default="1" unit="s">
 				<description>
 				The update interval in seconds to check for OGF updates.
 				</description>
@@ -59,8 +59,8 @@
 			</parameter>
 			<parameter name="commentMagID" type="string" default="eew.ogf.mag">
 				<description>
-				The ID of the comment of the evaluated origin which receives the magnitude
-				type of the maximum GOF value.
+				The ID of the comment of the evaluated origin which receives the publicID
+				of the magnitude that produced the maximum GOF value.
 				</description>
 			</parameter>
 			<parameter name="tableType" type="string" default="LOCSAT" values="homogeneous,libtau,LOCSAT">
