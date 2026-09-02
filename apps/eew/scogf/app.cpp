@@ -55,9 +55,6 @@ using namespace Seiscomp::Core;
 using namespace Seiscomp::DataModel;
 
 
-#define DUMP_DATA 0
-
-
 namespace EEW::OGF {
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
@@ -1096,18 +1093,22 @@ double App::compute(Origin *org, double mag, int *stationCount) {
 				continue;
 			}
 
-			double scale = pgv;
-
 			DoubleArrayPtr pred = DoubleArray::Cast(array);
 			if ( !pred ) {
 				pred = static_cast<DoubleArray*>(array->copy(Array::DOUBLE));
 			}
 
 			auto predMax = pred->max();
-			scale /= predMax;
-
 			double amplification = _prediction.amplification(sid);
-			scale *= amplification;
+
+			// Physical scale of the template: normalise it to unit peak, bring it
+			// to the GMPE PGV for this magnitude and distance, then apply the site
+			// amplification. Only the amplitude-fit term below uses this; the
+			// shape correlation is invariant to it.
+			double scale = pgv / predMax * amplification;
+
+			// Correlation window [idx0, idx1) in whole seconds after the origin
+			// time: the intersection of a, b, c
 
 			// Desired time window (a)
 			double startTimeA = assoc->ttP - _settings.preArrivalTimeWindow;
@@ -1117,7 +1118,7 @@ double App::compute(Origin *org, double mag, int *stationCount) {
 			double startTimeB = 0;
 			double endTimeB = pred->size();
 
-			// The time interval (the samples) covered by envelope values in the buffer (c)
+			// The samples the envelope buffer covers (c)
 			double startTimeC = static_cast<double>(buffer->front().timestamp - org->time().value());
 			double endTimeC = static_cast<double>(buffer->back().timestamp - org->time().value()) + 1.0;
 
@@ -1133,58 +1134,35 @@ double App::compute(Origin *org, double mag, int *stationCount) {
 			}
 
 			int count = idx1 - idx0;
-			double *dataPred = pred->typedData() + idx0;
+			const double *dataPred = pred->typedData() + idx0;
 
-			// Move buffer to start index
+			// Position the buffer iterator at the window start.
 			auto bit = buffer->begin();
-			int idx0Obs = (org->time().value() + TimeSpan(startTime) - bit->timestamp).seconds();
-			for ( int i = 0; i < idx0Obs; ++i ) {
-				++bit;
-			}
+			int obsLead = (org->time().value() + TimeSpan(startTime) - bit->timestamp).seconds();
+			bit += obsLead;
 
-			auto bitSave = bit;
-
-			double maxObs, maxPred;
-
-			#if DUMP_DATA
-			ofstream ofs;
-			ofs.open(sid + ".csv");
-			#endif
-
-			for ( int i = 0; i < count; ++i, ++bit ) {
-				auto obs = bit->value;
-				auto pred = dataPred[i] * scale;
-
-				#if DUMP_DATA
-				ofs << obs << "\t" << pred << "\n";
-				#endif
-
-				if ( !i ) {
-					maxObs = obs;
-					maxPred = pred;
-				}
-				else {
-					if ( maxObs < obs ) {
-						maxObs = obs;
-					}
-					if  ( maxPred < pred ) {
-						maxPred = pred;
-					}
+			// Peak amplitudes over the window: observed vs. GMPE-scaled template.
+			double maxObs = 0.0, maxPredWinRaw = 0.0;
+			{
+				auto it = bit;
+				for ( int i = 0; i < count; ++i, ++it ) {
+					maxObs = max(maxObs, it->value);
+					maxPredWinRaw = max(maxPredWinRaw, dataPred[i]);
 				}
 			}
+			double maxPredWinScaled = maxPredWinRaw * scale;
 
-			#if DUMP_DATA
-			ofs.close();
-			#endif
+			// Pearson correlation of the two shapes. Each series is normalised by
+			// its own window peak: the coefficient does not depend on that (nor on
+			// the GMPE scaling), the normalisation only keeps the sums well
+			// conditioned.
+			double normObs = maxObs > 0.0 ? 1.0 / maxObs : 1.0;
+			double normPred = maxPredWinRaw > 0.0 ? 1.0 / maxPredWinRaw : 1.0;
 
-			bit = bitSave;
-
-			double numericScale = (maxPred == 0.) ? 1.0 : (1.0 / maxPred);
 			double sumX{0}, sumY{0}, sumX2{0}, sumY2{0}, sumXY{0};
-
 			for ( int i = 0; i < count; ++i, ++bit ) {
-				auto obs = bit->value * numericScale;
-				auto pred = dataPred[i] * scale * numericScale;
+				auto obs = bit->value * normObs;
+				auto pred = dataPred[i] * normPred;
 
 				sumX += obs;
 				sumY += pred;
@@ -1193,31 +1171,37 @@ double App::compute(Origin *org, double mag, int *stationCount) {
 				sumXY += obs * pred;
 			}
 
-			double amplitudeFit = 1.0 - pow((maxObs - maxPred) / (maxObs + maxPred), 2.0);
+			// Amplitude fit: 1 when the observed peak matches the predicted peak,
+			// falling off as they diverge.
+			double ampRatio = (maxObs - maxPredWinScaled) / (maxObs + maxPredWinScaled);
+			double amplitudeFit = 1.0 - ampRatio * ampRatio;
+
 			// Pearson correlation coefficient
 			// Ref: https://en.wikipedia.org/wiki/Pearson_correlation_coefficient
-			double corr = max(0.0, (count * sumXY - sumX * sumY) / sqrt(count * sumX2 - sumX * sumX) / sqrt(count * sumY2 - sumY * sumY));
+			double corr = max(0.0, (count * sumXY - sumX * sumY)
+			                       / sqrt(count * sumX2 - sumX * sumX)
+			                       / sqrt(count * sumY2 - sumY * sumY));
+
 			double sgf = sqrt(corr * amplitudeFit); // Station Goodness of Fit
 
 			if ( !isfinite(sgf) ) {
-				SEISCOMP_DEBUG("%s: [%d(%d):%d#%d] dist=%f, mag=%f, gMaxPred=%f, "
-						"scale=pgv(%f)*amplification(%f)/max(%f)=%f, maxObs=%f, maxPred=%f, "
-						"ampFit=%f, corr=%f, SGF=%f (sumX=%f, sumX2=%f, sumY=%f, sumY2=%f, "
-						"sumXY=%f)",
-						sid, idx0, idx0Obs, idx1, count, assoc->dist, mag, predMax, pgv,
-						amplification, predMax, scale, maxObs, maxPred, amplitudeFit, corr,
-						sgf, sumX, sumX2, sumY, sumY2, sumXY);
-				if ( maxObs == 0. && maxPred == 0. ) {
-					SEISCOMP_DEBUG("maxObs and maxPred are 0. Set Station GoF to 1.");
+				if ( maxObs == 0.0 && maxPredWinScaled == 0.0 ) {
+					// Nothing observed and nothing expected: trivially a perfect fit.
 					sgf = 1.0;
 				}
 				else {
+					SEISCOMP_DEBUG("%s: non-finite SGF [%d:%d #%d] dist=%.1f mag=%.2f "
+					               "pgv=%g amp=%.2f scale=%g maxObs=%g maxPred=%g "
+					               "ampFit=%g corr=%g",
+					               sid, idx0, idx1, count, assoc->dist, mag, pgv,
+					               amplification, scale, maxObs, maxPred, amplitudeFit, corr);
 					continue;
 				}
 			}
 
 			assoc->correlation = sgf;
 			assoc->lastMag = mag;
+
 		}
 		else {
 			// SEISCOMP_DEBUG("%s: reuse SGF=%f", sid, assoc->correlation);
