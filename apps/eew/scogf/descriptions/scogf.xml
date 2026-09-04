@@ -51,6 +51,17 @@
 				station.
 				</description>
 			</parameter>
+			<parameter name="minimumCorrelationWindow" type="double" default="0" unit="s">
+				<description>
+				Minimum length of the correlation window for a station to contribute
+				its station goodness of fit (SGF) to the OGF. The window runs from the
+				P arrival minus preArrivalTimeWindow to the earliest of
+				postArrivalTimeShare * S travel time, the template length and the end of
+				the buffered envelope, so close stations and origins that are only seconds
+				old can produce windows too short for a meaningful fit. 0 (default)
+				disables the check.
+				</description>
+			</parameter>
 			<parameter name="predictionArchivePath" type="path" default="@DATADIR@/scogf">
 				<description>
 				The path of the predicted envelopes and ground motion coefficients.

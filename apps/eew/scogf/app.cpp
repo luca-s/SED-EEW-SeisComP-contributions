@@ -1274,6 +1274,12 @@ double App::compute(Origin *org, double mag, int *stationCount,
 				continue;
 			}
 
+			// Too short a window
+			if ( endTime - startTime < _settings.minimumCorrelationWindow ) {
+				skip(sid, distKm, "correlation window too short");
+				continue;
+			}
+
 			int count = idx1 - idx0;
 			const double *dataPred = pred->typedData() + idx0;
 

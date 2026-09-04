@@ -149,6 +149,7 @@ class App : public Seiscomp::Client::Application {
 				& cfg(updateInterval, "updateInterval")
 				& cfg(preArrivalTimeWindow, "preArrivalTimeWindow")
 				& cfg(postArrivalTimeShare, "postArrivalTimeShare")
+				& cfg(minimumCorrelationWindow, "minimumCorrelationWindow")
 				& cfg(predictionArchivePath, "predictionArchivePath")
 				& cfg(commentID, "commentID")
 				& cfg(commentMagID, "commentMagID")
@@ -257,6 +258,7 @@ class App : public Seiscomp::Client::Application {
 			size_t                   minimumStations{1};
 			double                   preArrivalTimeWindow{0};
 			double                   postArrivalTimeShare{1.5};
+			double                   minimumCorrelationWindow{0};
 			std::string              predictionArchivePath{"@DATADIR@/scogf"};
 			std::string              commentID{"eew.ogf.value"};
 			std::string              commentMagID{"eew.ogf.mag"};

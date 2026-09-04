@@ -124,22 +124,32 @@ With ``--style spec`` the observed envelope and the template are drawn in two
 stacked panels per station instead of overlaid; the shaded band and the arrival
 lines are repeated on each panel.
 
-The header line of a station block reads
-``NET.STA.LOC   Δ <km>   SGF <value>   StaAmp <factor>   PGV <value>``, with the
-resolved template file path printed dim underneath it.
+The header line of a station block reads ``NET.STA.LOC   Δ <km>   SGF <value>
+ampFit <value>   corr <value>   maxObs <value>   maxPred <value>   StaAmp
+<factor>   PGV <value>``, where ``corr`` is the shape (Pearson) correlation,
+``ampFit`` the amplitude-fit term, ``maxObs`` / ``maxPred`` the observed and
+GMPE-scaled predicted peaks in the window, and
+``SGF = sqrt(corr * ampFit)``. The resolved template file path is printed dim
+underneath it.
 
 The correlation window normally starts at the P arrival time truncated to the
 second, and ends at the earliest of ``ttS * postArrivalTimeShare``, the template
-length and the end of the buffered data. ``--context`` sets how many seconds of
-observed envelope are shown after the window; envelope before the window (for example
-between origin time and P) is always shown.
+length and the end of the buffered data. When
+:confval:`minimumCorrelationWindow` is set, a station whose window comes out
+shorter than that is dropped from the OGF (skip reason *correlation window too
+short*). ``--context`` sets how many seconds of observed envelope are shown
+after the window; envelope before the window (for example between origin time
+and P) is always shown.
 
 The figure title carries the origin publicID, the best-fitting magnitude type
 and value, the overall OGF and the contributing-station count (all of them, even
-when ``--max-stations`` limits how many are drawn). The footer summarises the
-stations that were associated but did not contribute, counted by reason (no
-template, outside the cutoff distance for that magnitude, empty buffer, no PGV,
-non-finite fit), and notes when contributing stations were hidden by
+when ``--max-stations`` limits how many are drawn). A second line underneath
+gives the origin's latitude, longitude, depth and the station search radius
+(cutoff distance) that applied for the best-fitting magnitude value (see
+:confval:`distancePerMagnitude`). The footer summarises the stations that were
+associated but did not contribute, counted by reason (no template, outside the
+cutoff distance for that magnitude, empty buffer, no PGV, correlation window
+too short, non-finite fit), and notes when contributing stations were hidden by
 ``--max-stations``.
 
 
