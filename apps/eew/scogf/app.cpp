@@ -1283,20 +1283,40 @@ double App::compute(Origin *org, double mag, int *stationCount,
 			int count = idx1 - idx0;
 			const double *dataPred = pred->typedData() + idx0;
 
-			// Position the buffer iterator at the window start.
+			// Position the buffer iterator at the first sample not before the
+			// window start
+			const Time winStart = org->time().value() + TimeSpan(startTime);
 			auto bit = buffer->begin();
-			int obsLead = (org->time().value() + TimeSpan(startTime) - bit->timestamp).seconds();
-			bit += obsLead;
+			while ( bit != buffer->end() && bit->timestamp < winStart ) {
+				++bit;
+			}
+
+			if ( bit == buffer->end() ) {
+				// A gap swallowed the whole window: no sample within [idx0, idx1)
+				// even though the buffer's overall time span covers it.
+				skip(sid, distKm, "empty correlation time window");
+				continue;
+			}
 
 			// Peak amplitudes over the window: observed vs. GMPE-scaled template.
+			// A gap inside the window can leave fewer observed samples than
+			// count; nObs is what is actually available and is what the
+			// correlation below is computed over.
 			double maxObs = 0.0, maxPredWinRaw = 0.0;
+			int nObs = 0;
 			{
 				auto it = bit;
-				for ( int i = 0; i < count; ++i, ++it ) {
+				for ( ; nObs < count && it != buffer->end(); ++nObs, ++it ) {
 					maxObs = max(maxObs, it->value);
-					maxPredWinRaw = max(maxPredWinRaw, dataPred[i]);
+					maxPredWinRaw = max(maxPredWinRaw, dataPred[nObs]);
 				}
 			}
+
+			if ( nObs == 0 ) {
+				skip(sid, distKm, "empty correlation time window");
+				continue;
+			}
+
 			double maxPredWinScaled = maxPredWinRaw * scale;
 
 			// Pearson correlation of the two shapes. Each series is normalised by
@@ -1307,7 +1327,7 @@ double App::compute(Origin *org, double mag, int *stationCount,
 			double normPred = maxPredWinRaw > 0.0 ? 1.0 / maxPredWinRaw : 1.0;
 
 			double sumX{0}, sumY{0}, sumX2{0}, sumY2{0}, sumXY{0};
-			for ( int i = 0; i < count; ++i, ++bit ) {
+			for ( int i = 0; i < nObs; ++i, ++bit ) {
 				auto obs = bit->value * normObs;
 				auto pred = dataPred[i] * normPred;
 
@@ -1325,9 +1345,9 @@ double App::compute(Origin *org, double mag, int *stationCount,
 
 			// Pearson correlation coefficient
 			// Ref: https://en.wikipedia.org/wiki/Pearson_correlation_coefficient
-			double corr = max(0.0, (count * sumXY - sumX * sumY)
-			                       / sqrt(count * sumX2 - sumX * sumX)
-			                       / sqrt(count * sumY2 - sumY * sumY));
+			double corr = max(0.0, (nObs * sumXY - sumX * sumY)
+			                       / sqrt(nObs * sumX2 - sumX * sumX)
+			                       / sqrt(nObs * sumY2 - sumY * sumY));
 
 			double sgf = sqrt(corr * amplitudeFit); // Station Goodness of Fit
 
@@ -1340,7 +1360,7 @@ double App::compute(Origin *org, double mag, int *stationCount,
 					SEISCOMP_DEBUG("%s: non-finite SGF [%d:%d #%d] dist=%.1f mag=%.2f "
 					               "pgv=%g amp=%.2f scale=%g maxObs=%g maxPredWinScaled=%g "
 					               "ampFit=%g corr=%g",
-					               sid, idx0, idx1, count, assoc->dist, mag, pgv,
+					               sid, idx0, idx1, nObs, assoc->dist, mag, pgv,
 					               amplification, scale, maxObs, maxPredWinScaled, amplitudeFit, corr);
 					skip(sid, distKm, "non-finite station GoF");
 					continue;
@@ -1380,9 +1400,9 @@ double App::compute(Origin *org, double mag, int *stationCount,
 				// clamped to what the buffer actually covers.
 				const double ctxStart = max(startTimeC, static_cast<double>(idx0) - 15.0);
 				const double ctxEnd = min(endTimeC, static_cast<double>(idx1) + 45.0);
+				const Time ctxStartAbs = org->time().value() + TimeSpan(ctxStart);
 				auto cit = buffer->begin();
-				int lead = (org->time().value() + TimeSpan(ctxStart) - cit->timestamp).seconds();
-				for ( int i = 0; i < lead && cit != buffer->end(); ++i ) {
+				while ( cit != buffer->end() && cit->timestamp < ctxStartAbs ) {
 					++cit;
 				}
 				if ( cit != buffer->end() ) {
