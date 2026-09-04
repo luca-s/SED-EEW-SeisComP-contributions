@@ -105,6 +105,19 @@ class Prediction {
 		Seiscomp::Array *trace(const std::string &soilClass, double mag, double dist);
 
 		/**
+		 * @brief Resolves the soil class that get() would use for a streamID.
+		 * Returns the binding's soil class, or the default soil class if there is
+		 * no binding or the binding has an empty soil class. May be empty.
+		 */
+		std::string resolvedSoilClass(const std::string &streamID) const;
+
+		/**
+		 * @brief Returns the path of the template file that trace() would load
+		 * for the given parameters, without loading it. Empty if none matches.
+		 */
+		std::string tracePath(const std::string &soilClass, double mag, double dist) const;
+
+		/**
 		 * @brief Returns the predicted trace for a streamID.
 		 * This method resolves the channel bindings to get the corresponding
 		 * soil class and calls trace().
@@ -126,6 +139,19 @@ class Prediction {
 		double pgv(const Seiscomp::DataModel::Origin *org, double mag, double dist) const;
 
 		double amplification(const std::string &streamID) const;
+
+
+	// ----------------------------------------------------------------------
+	//  Private methods
+	// ----------------------------------------------------------------------
+	private:
+		/**
+		 * @brief Nearest-neighbour lookup of a template file in the envelope
+		 * archive. Shared by trace() and tracePath(). Returns nullptr if the
+		 * soil class is unknown or no magnitude/distance bin matches.
+		 */
+		const std::string *lookupTraceFile(const std::string &soilClass,
+		                                   double mag, double dist) const;
 
 
 	// ----------------------------------------------------------------------

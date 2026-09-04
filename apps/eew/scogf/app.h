@@ -44,6 +44,7 @@
 
 #include "association.h"
 #include "circular.h"
+#include "debugdump.h"
 #include "prediction.h"
 
 
@@ -116,9 +117,17 @@ class App : public Seiscomp::Client::Application {
 		void addAssociations(Seiscomp::DataModel::Origin *org);
 		void process(Seiscomp::DataModel::Origin *org, Seiscomp::IO::RecordStream *rs);
 		void process(Seiscomp::DataModel::Origin *org, Evaluation &eval);
-		double compute(Seiscomp::DataModel::Origin *org, 
-		               const Seiscomp::DataModel::Magnitude *mag, int *stationCount = nullptr);
-		double compute(Seiscomp::DataModel::Origin *org, double mag, int *stationCount = nullptr);
+		double compute(Seiscomp::DataModel::Origin *org,
+		               const Seiscomp::DataModel::Magnitude *mag, int *stationCount = nullptr,
+		               std::vector<StationEval> *detail = nullptr);
+		double compute(Seiscomp::DataModel::Origin *org, double mag, int *stationCount = nullptr,
+		               std::vector<StationEval> *detail = nullptr);
+
+		double cutoffDistanceKm(double mag) const;
+
+		void writeDebugSnapshot(Seiscomp::DataModel::Origin *org, const Evaluation &eval,
+		                        const std::string &magID, const std::string &magType,
+		                        double magValue, const std::vector<StationEval> &detail);
 
 
 	// ----------------------------------------------------------------------
@@ -145,6 +154,7 @@ class App : public Seiscomp::Client::Application {
 				& cfg(commentMagID, "commentMagID")
 				& cfg(envelopes, "envelopes")
 				& cfg(sensorLocations, "sensorLocations")
+				& cfg(debug, "debug")
 				& cfg(tttType, "tableType")
 				& cfg(tttTable, "table")
 				& cfg(tttAllowNegativeDepths, "tableAllowNegativeDepths")
@@ -211,6 +221,20 @@ class App : public Seiscomp::Client::Application {
 			struct {
 				void accept(SettingsLinker &linker) {
 					linker
+					& cfg(dumpPath, "dumpPath")
+					& cfg(keepDays, "keepDays")
+					& cfg(maxFiles, "maxFiles")
+					;
+				}
+
+				std::string              dumpPath;
+				int                      keepDays{14};
+				int                      maxFiles{5000};
+			}                        debug;
+
+			struct {
+				void accept(SettingsLinker &linker) {
+					linker
 					& cfg(enable, "enable")
 					& cfg(type, "type")
 					& cfg(minimum, "minimum")
@@ -255,6 +279,8 @@ class App : public Seiscomp::Client::Application {
 		Firewall                     _slocFirewall;
 		Prediction                   _prediction;
 		Seiscomp::TravelTimeTableInterfacePtr _ttt;
+
+		OPT(Seiscomp::Core::Time)    _lastDebugPrune;
 
 		std::mutex                   _mutexAlert;
 		std::condition_variable      _signalAlert;

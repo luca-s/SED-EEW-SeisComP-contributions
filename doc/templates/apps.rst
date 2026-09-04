@@ -19,6 +19,7 @@ Modules
    /apps/sceewenv
    /apps/scvsmag
    /apps/scfinder
+   /apps/scogf
    /apps/sceewlog
 
 =========
@@ -27,7 +28,7 @@ Utilities
 
 .. toctree::
    :maxdepth: 3
-   
+
    /apps/scgof
    /apps/sceewdump
 

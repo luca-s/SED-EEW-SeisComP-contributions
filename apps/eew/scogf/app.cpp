@@ -41,10 +41,12 @@
 #include <seiscomp/math/mean.h>
 #include <seiscomp/utils/misc.h>
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <limits>
 #include <set>
+#include <utility>
 
 #include "app.h"
 
@@ -318,6 +320,18 @@ bool App::init() {
 
 	SEISCOMP_DEBUG("Available envelope soil classes: %s", Core::join(_prediction.soilClasses(), ", "));
 	SEISCOMP_DEBUG("Available gmpe zones: %s", Core::join(_prediction.zones(), ", "));
+
+	if ( !_settings.debug.dumpPath.empty() ) {
+		_settings.debug.dumpPath = Environment::Instance()->absolutePath(_settings.debug.dumpPath);
+		try {
+			filesystem::create_directories(_settings.debug.dumpPath);
+		}
+		catch ( exception &e ) {
+			SEISCOMP_ERROR("debug.dumpPath: %s", e.what());
+			return false;
+		}
+		SEISCOMP_INFO("OGF debug snapshots enabled: %s", _settings.debug.dumpPath);
+	}
 
 	_cache.setDatabaseArchive(query());
 	_cache.setTimeSpan(_settings.cacheSize);
@@ -872,6 +886,14 @@ void App::process(Origin *org, Evaluation &eval) {
 	eval.bestMagnitude = {};
 	eval.gof = -1;
 
+	// Debug snapshot: keep the per-station detail from the compute() call that
+	// wins the overall GOF (not the last one).
+	const bool wantSnapshot = !_settings.debug.dumpPath.empty();
+	vector<StationEval> snapDetail, candDetail;
+	string snapMagID, snapMagType;
+	double snapMagValue = 0;
+	bool snapIsEnvMag = false;
+
 	if ( _settings.envelopeMagnitude.enable ) {
 		OPT(double) envMagGOF;
 		double envMagValue;
@@ -880,12 +902,20 @@ void App::process(Origin *org, Evaluation &eval) {
 		for ( double m = _settings.envelopeMagnitude.minimum;
 		      m < _settings.envelopeMagnitude.maximum;
 		      m += _settings.envelopeMagnitude.spacing ) {
-			auto gof = compute(org, m, &stationCount);
+			auto gof = compute(org, m, &stationCount,
+			                   wantSnapshot ? &candDetail : nullptr);
 			if ( isfinite(gof) && stationCount >= _settings.minimumStations &&
 			     (!envMagGOF || (*envMagGOF < gof)) ) {
 				envMagGOF = gof;
 				envMagValue = m;
 				envMagStationCount = stationCount;
+				if ( wantSnapshot ) {
+					snapDetail = std::move(candDetail);
+					snapMagValue = m;
+					snapMagType = _settings.envelopeMagnitude.type;
+					snapMagID.clear();
+					snapIsEnvMag = true;
+				}
 			}
 		}
 
@@ -932,6 +962,10 @@ void App::process(Origin *org, Evaluation &eval) {
 			eval.gof = *envMagGOF;
 			eval.bestMagnitude = envMag->publicID();
 
+			if ( wantSnapshot && snapIsEnvMag ) {
+				snapMagID = envMag->publicID();
+			}
+
 			SEISCOMP_DEBUG("%s/%s: M=%f, GOF=%f (stations %d)", org->publicID(),
 			               envMag->type(), envMag->magnitude().value(), *envMagGOF,
 			               envMag->stationCount());
@@ -946,14 +980,22 @@ void App::process(Origin *org, Evaluation &eval) {
 		}
 
 		int stationCount;
-		auto gof = compute(org, mag, &stationCount);
+		auto gof = compute(org, mag, &stationCount,
+		                   wantSnapshot ? &candDetail : nullptr);
 		if ( isfinite(gof) && stationCount >= _settings.minimumStations &&
 		     gof >= eval.gof ) {
 			eval.gof = gof;
 			eval.bestMagnitude = mag->publicID();
+			if ( wantSnapshot ) {
+				snapDetail = std::move(candDetail);
+				snapMagID = mag->publicID();
+				snapMagType = mag->type();
+				snapMagValue = mag->magnitude().value();
+				snapIsEnvMag = false;
+			}
 		}
 
-		SEISCOMP_DEBUG("%s/%s: M=%f, GOF=%f (stations %d)", org->publicID(), 
+		SEISCOMP_DEBUG("%s/%s: M=%f, GOF=%f (stations %d)", org->publicID(),
 		               mag->type(), mag->magnitude().value(), gof, stationCount);
 	}
 
@@ -1009,6 +1051,12 @@ void App::process(Origin *org, Evaluation &eval) {
 		touch(org);
 		org->update();
 	}
+
+	if ( wantSnapshot && eval.gof >= 0
+	  && any_of(snapDetail.begin(), snapDetail.end(),
+	            [](const StationEval &s) { return s.used; }) ) {
+		writeDebugSnapshot(org, eval, snapMagID, snapMagType, snapMagValue, snapDetail);
+	}
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
@@ -1016,9 +1064,48 @@ void App::process(Origin *org, Evaluation &eval) {
 
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-double App::compute(Origin *org, const Magnitude *mag, int *stationCount) {
-	SEISCOMP_DEBUG("Compute %s %s %s", org->publicID(), mag->publicID(), mag->type());
-	return compute(org, mag->magnitude().value(), stationCount);
+void App::writeDebugSnapshot(Origin *org, const Evaluation &eval,
+                             const string &magID, const string &magType,
+                             double magValue, const vector<StationEval> &detail) {
+	OriginSnapshot snap;
+	snap.publicID = org->publicID();
+	try { snap.time = org->time().value().iso(); } catch ( ... ) {}
+	try { snap.author = org->creationInfo().author(); } catch ( ... ) {}
+	try { snap.latitude = org->latitude().value(); } catch ( ... ) {}
+	try { snap.longitude = org->longitude().value(); } catch ( ... ) {}
+	try { snap.depth = org->depth().value(); } catch ( ... ) {}
+
+	snap.ogf = eval.gof;
+	snap.minimumStations = _settings.minimumStations;
+	snap.cutoffDistanceKm = cutoffDistanceKm(magValue);
+	snap.magID = magID;
+	snap.magType = magType;
+	snap.magValue = magValue;
+	snap.stations = detail;
+
+	// Contributing stations first, both groups sorted by distance.
+	sort(snap.stations.begin(), snap.stations.end(),
+	     [](const StationEval &a, const StationEval &b) {
+		if ( a.used != b.used ) {
+			return a.used;
+		}
+		return a.distanceKm < b.distanceKm;
+	});
+
+	if ( !writeSnapshotFile(_settings.debug.dumpPath, snap) ) {
+		return;
+	}
+
+	SEISCOMP_DEBUG("%s: wrote OGF debug snapshot (%zu stations)",
+	               org->publicID(), snap.stations.size());
+
+	// Rate-limited directory cleanup.
+	Core::Time now = Core::Time::UTC();
+	if ( !_lastDebugPrune || (now - *_lastDebugPrune) >= Core::TimeSpan(300, 0) ) {
+		_lastDebugPrune = now;
+		pruneSnapshots(_settings.debug.dumpPath,
+		               _settings.debug.keepDays, _settings.debug.maxFiles);
+	}
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
@@ -1026,16 +1113,55 @@ double App::compute(Origin *org, const Magnitude *mag, int *stationCount) {
 
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-double App::compute(Origin *org, double mag, int *stationCount) {
-	vector<double> gofs;
-
+double App::cutoffDistanceKm(double mag) const {
 	// Optional magnitude dependent station search radius. If not configured,
 	// maximumDistance is used regardless of magnitude.
 	double cutoffDist = _settings.maximumDistance;
 	if ( _settings.distancePerMagnitude ) {
 		cutoffDist = min(*_settings.distancePerMagnitude * mag, _settings.maximumDistance);
 	}
-	const double cutoffDistKm = Math::Geo::deg2km(cutoffDist);
+	return Math::Geo::deg2km(cutoffDist);
+}
+// <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+
+
+// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+double App::compute(Origin *org, const Magnitude *mag, int *stationCount,
+                    vector<StationEval> *detail) {
+	SEISCOMP_DEBUG("Compute %s %s %s", org->publicID(), mag->publicID(), mag->type());
+	return compute(org, mag->magnitude().value(), stationCount, detail);
+}
+// <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+
+
+// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+double App::compute(Origin *org, double mag, int *stationCount,
+                    vector<StationEval> *detail) {
+	vector<double> gofs;
+
+	if ( detail ) {
+		detail->clear();
+	}
+
+	// Records a station that did not contribute to the OGF, for the debug
+	// snapshot only. No-op when detail collection is off.
+	auto skip = [detail](const string &sid, double distKm, const char *reason) {
+		if ( !detail ) {
+			return;
+		}
+		StationEval se;
+		se.sid = sid;
+		se.distanceKm = distKm;
+		se.skipReason = reason;
+		detail->push_back(std::move(se));
+		SEISCOMP_DEBUG("Skip %s at %.1fkm: %s", sid, distKm, reason);
+	};
+
+	const double cutoffDistKm = cutoffDistanceKm(mag);
 
 	// Do not check the eval.dirty flag as this has been done already
 	for ( const auto &[org, sid] : _associationTable.sensors(org) ) {
@@ -1055,23 +1181,29 @@ double App::compute(Origin *org, double mag, int *stationCount) {
 
 		auto it = _envelopeBuffers.find(sid);
 		if ( it == _envelopeBuffers.end() ) {
+			skip(sid, distKm, "no envelope buffer");
 			continue;
 		}
 
 		auto buffer = it->second.get();
 		if ( !buffer || buffer->empty() ) {
 			// No envelopes
+			skip(sid, distKm, "no envelopes buffered");
 			continue;
 		}
 
 		if ( !assoc ) {
 			// No association
+			skip(sid, distKm, "no association");
 			continue;
 		}
 
-		if ( !assoc->lastMag
+		if ( detail
+		  || !assoc->lastMag
 		  || !_prediction.equal(*assoc->lastMag, mag) ) {
-			// A dirty association requires a recomputation
+			// A dirty association requires a recomputation. The detail pass
+			// always recomputes so the captured arrays are self-consistent for
+			// this magnitude.
 
 			assoc->correlation = -1;
 			assoc->lastMag = Seiscomp::Core::None;
@@ -1081,12 +1213,14 @@ double App::compute(Origin *org, double mag, int *stationCount) {
 				array = _prediction.get(sid, mag, assoc->dist);
 				if ( !array ) {
 					// No predictions
+					skip(sid, distKm, "no predicted template");
 					continue;
 				}
 			}
 			catch ( exception &e ) {
 				// No predictions
 				SEISCOMP_WARNING("No predictions for %s: %s", sid, e.what());
+				skip(sid, distKm, "no predicted template");
 				continue;
 			}
 
@@ -1096,6 +1230,7 @@ double App::compute(Origin *org, double mag, int *stationCount) {
 			}
 			catch ( exception &e ) {
 				SEISCOMP_WARNING("No pgv: %s", e.what());
+				skip(sid, distKm, "no predicted PGV");
 				continue;
 			}
 
@@ -1135,7 +1270,7 @@ double App::compute(Origin *org, double mag, int *stationCount) {
 			int idx1 = static_cast<int>(endTime);
 
 			if ( idx0 >= idx1 ) {
-				SEISCOMP_DEBUG("Empty correlation time window: %d:%d", idx0, idx1);
+				skip(sid, distKm, "empty correlation time window");
 				continue;
 			}
 
@@ -1197,10 +1332,11 @@ double App::compute(Origin *org, double mag, int *stationCount) {
 				}
 				else {
 					SEISCOMP_DEBUG("%s: non-finite SGF [%d:%d #%d] dist=%.1f mag=%.2f "
-					               "pgv=%g amp=%.2f scale=%g maxObs=%g maxPred=%g "
+					               "pgv=%g amp=%.2f scale=%g maxObs=%g maxPredWinScaled=%g "
 					               "ampFit=%g corr=%g",
 					               sid, idx0, idx1, count, assoc->dist, mag, pgv,
-					               amplification, scale, maxObs, maxPred, amplitudeFit, corr);
+					               amplification, scale, maxObs, maxPredWinScaled, amplitudeFit, corr);
+					skip(sid, distKm, "non-finite station GoF");
 					continue;
 				}
 			}
@@ -1208,6 +1344,54 @@ double App::compute(Origin *org, double mag, int *stationCount) {
 			assoc->correlation = sgf;
 			assoc->lastMag = mag;
 
+			if ( detail ) {
+				StationEval se;
+				se.sid = sid;
+				se.distanceKm = assoc->dist;
+				se.used = true;
+				se.soilClass = _prediction.resolvedSoilClass(sid);
+				se.templatePath = _prediction.tracePath(se.soilClass, mag, assoc->dist);
+				se.ttP = assoc->ttP;
+				se.ttS = assoc->ttS;
+				se.pgv = pgv;
+				se.amplification = amplification;
+				se.predMax = predMax;
+				se.scale = scale;
+				se.windowStart = idx0;
+				se.windowEnd = idx1;
+				se.maxObs = maxObs;
+				se.maxPred = maxPredWinScaled;
+				se.amplitudeFit = amplitudeFit;
+				se.correlation = corr;
+				se.sgf = sgf;
+
+				// Full raw template: sample j is j seconds after the origin time.
+				se.rawTemplateT0 = 0.0;
+				se.rawTemplate.assign(pred->typedData(),
+				                      pred->typedData() + pred->size());
+
+				// Observed envelope over a context window around [idx0, idx1],
+				// clamped to what the buffer actually covers.
+				const double ctxStart = max(startTimeC, static_cast<double>(idx0) - 15.0);
+				const double ctxEnd = min(endTimeC, static_cast<double>(idx1) + 45.0);
+				auto cit = buffer->begin();
+				int lead = (org->time().value() + TimeSpan(ctxStart) - cit->timestamp).seconds();
+				for ( int i = 0; i < lead && cit != buffer->end(); ++i ) {
+					++cit;
+				}
+				if ( cit != buffer->end() ) {
+					se.observedT0 = static_cast<double>(cit->timestamp - org->time().value());
+					for ( ; cit != buffer->end(); ++cit ) {
+						double t = static_cast<double>(cit->timestamp - org->time().value());
+						if ( t > ctxEnd ) {
+							break;
+						}
+						se.observed.push_back(cit->value);
+					}
+				}
+
+				detail->push_back(std::move(se));
+			}
 		}
 		else {
 			// SEISCOMP_DEBUG("%s: reuse SGF=%f", sid, assoc->correlation);

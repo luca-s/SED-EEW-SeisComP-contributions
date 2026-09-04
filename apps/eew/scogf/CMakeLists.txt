@@ -3,6 +3,7 @@ SET(EEWOGF_SOURCES
 	main.cpp
 	app.cpp
 	association.cpp
+	debugdump.cpp
 	npy.cpp
 	prediction.cpp
 )
@@ -12,6 +13,8 @@ INCLUDE_DIRECTORIES(${SC3_PACKAGE_BINARY_DIR}/../sed/libs)
 
 SC_ADD_EXECUTABLE(EEWOGF ${EEWOGF_TARGET})
 SC_LINK_LIBRARIES_INTERNAL(${EEWOGF_TARGET} client datamodel_vs)
+
+SC_ADD_PYTHON_PROG(scogfplot)
 
 IF(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../../../trunk/apps/templates/initd.py")
 	SC_INSTALL_INIT(${EEWOGF_TARGET} ../../../../trunk/apps/templates/initd.py)

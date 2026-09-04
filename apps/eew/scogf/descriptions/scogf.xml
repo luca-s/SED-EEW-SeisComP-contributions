@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <seiscomp>
 	<module name="scogf" category="EEW" author="Swiss Seismological Service">
-		<description>...	</description>
+		<description>
+		Computes an Origin Goodness of Fit (OGF) for each origin by correlating the
+		observed real-time ground-motion envelopes against predicted envelope
+		templates, and writes the result plus the best-fitting magnitude as origin
+		comments for scevent. Optionally derives an envelope magnitude Menv.
+		</description>
 		<configuration>
 			<parameter name="cacheSize" type="int" default="1800" unit="s">
 				<description>
@@ -145,6 +150,37 @@
 				<parameter name="defaultSoilClass" type="string">
 					<description>
 					The default sensor location soil class.
+					</description>
+				</parameter>
+			</group>
+			<group name="debug">
+				<description>
+				Per-origin debug snapshots of the OGF computation. When enabled,
+				scogf writes one JSON file per origin (overwritten in place on each
+				update) holding, for the magnitude that produced the best fit, every
+				station considered: the raw template, the observed envelope, and the
+				SGF, PGV, amplification and window values. Render it with the
+				'scogf-plot' tool, e.g. from a scolv command action.
+				</description>
+				<parameter name="dumpPath" type="path" default="">
+					<description>
+					Target directory for the snapshots. Empty (default) disables the
+					feature. A runtime location such as
+					@ROOTDIR@/var/lib/scogf/debug is recommended; do not use
+					@DATADIR@ which holds read-only installed data.
+					</description>
+				</parameter>
+				<parameter name="keepDays" type="int" default="14" unit="days">
+					<description>
+					Delete snapshots older than this. 0 disables the age-based
+					sweep. Pruning runs at most once every 5 minutes.
+					</description>
+				</parameter>
+				<parameter name="maxFiles" type="int" default="5000">
+					<description>
+					Hard ceiling on the number of snapshot files. Beyond it the
+					oldest files are removed regardless of age. 0 disables the
+					count-based cap.
 					</description>
 				</parameter>
 			</group>

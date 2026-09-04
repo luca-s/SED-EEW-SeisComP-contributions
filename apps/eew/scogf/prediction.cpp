@@ -318,11 +318,10 @@ void Prediction::setDefaultSoilClass(const string &defaultSoilClass) {
 
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-Seiscomp::Array *Prediction::trace(const std::string &soilClass, double mag, double dist) {
-
+const std::string *Prediction::lookupTraceFile(const std::string &soilClass,
+                                               double mag, double dist) const {
 	auto it = _envlp.find(soilClass);
 	if ( it == _envlp.end() ) {
-		SEISCOMP_WARNING("No soil class (%s) envelopes found", soilClass);
 		return nullptr;
 	}
 
@@ -331,7 +330,6 @@ Seiscomp::Array *Prediction::trace(const std::string &soilClass, double mag, dou
 	if ( mit == magnitudes.end() ||
 	    (mit == magnitudes.begin() && mit->first > mag) ) {
 		// mag is smaller or greater than all keys
-		SEISCOMP_DEBUG("No prediction (%s) available for magnitude %f", soilClass, mag);
 		return nullptr;
 	}
 	else if ( mit != magnitudes.begin() ) {
@@ -346,10 +344,8 @@ Seiscomp::Array *Prediction::trace(const std::string &soilClass, double mag, dou
 	const auto &distances = mit->second;
 	auto dit = distances.lower_bound(dist);
 	if ( dit == distances.end()  ||
-	    (dit == distances.begin() && dit->first > dist) ) { 
+	    (dit == distances.begin() && dit->first > dist) ) {
 		// dist is smaller or greater than all keys
-		SEISCOMP_DEBUG("No prediction (%s) available for distance %f (mag %f)",
-		               soilClass, dist, mag);
 		return nullptr;
 	}
 	else if ( dit != distances.begin() ) {
@@ -361,10 +357,56 @@ Seiscomp::Array *Prediction::trace(const std::string &soilClass, double mag, dou
 		}
 	}
 
-	//SEISCOMP_DEBUG("Trying to read prediction %s", dit->second);
+	return &dit->second;
+}
+// <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+
+
+// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Seiscomp::Array *Prediction::trace(const std::string &soilClass, double mag, double dist) {
+	if ( _envlp.find(soilClass) == _envlp.end() ) {
+		SEISCOMP_WARNING("No soil class (%s) envelopes found", soilClass);
+		return nullptr;
+	}
+
+	const auto *path = lookupTraceFile(soilClass, mag, dist);
+	if ( !path ) {
+		SEISCOMP_DEBUG("No prediction (%s) available for magnitude %f / distance %f",
+		               soilClass, mag, dist);
+		return nullptr;
+	}
+
+	//SEISCOMP_DEBUG("Trying to read prediction %s", *path);
 
 	// TODO: Option to implement a cache in the future.
-	return loadNpy(dit->second);
+	return loadNpy(*path);
+}
+// <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+
+
+// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+std::string Prediction::resolvedSoilClass(const std::string &streamID) const {
+	auto it = _bindings.find(streamID);
+	if ( it == _bindings.end() || it->second.soilClass.empty() ) {
+		return _defaultSoilClass;
+	}
+
+	return it->second.soilClass;
+}
+// <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+
+
+// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+std::string Prediction::tracePath(const std::string &soilClass,
+                                  double mag, double dist) const {
+	const auto *path = lookupTraceFile(soilClass, mag, dist);
+	return path ? *path : std::string();
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
