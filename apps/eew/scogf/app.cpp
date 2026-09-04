@@ -1035,9 +1035,24 @@ double App::compute(Origin *org, double mag, int *stationCount) {
 	if ( _settings.distancePerMagnitude ) {
 		cutoffDist = min(*_settings.distancePerMagnitude * mag, _settings.maximumDistance);
 	}
+	const double cutoffDistKm = Math::Geo::deg2km(cutoffDist);
 
 	// Do not check the eval.dirty flag as this has been done already
 	for ( const auto &[org, sid] : _associationTable.sensors(org) ) {
+
+		auto *assoc = _associationTable.assoc(org, sid);
+		if ( !assoc ) {
+			SEISCOMP_WARNING("No associationTable for %s: %s", org->publicID(), sid);
+			continue;
+		}
+
+		const double distKm = assoc->dist;
+
+		if ( distKm > cutoffDistKm ) {
+			// station farther then cutoff distance
+			continue;
+		}
+
 		auto it = _envelopeBuffers.find(sid);
 		if ( it == _envelopeBuffers.end() ) {
 			continue;
@@ -1049,15 +1064,6 @@ double App::compute(Origin *org, double mag, int *stationCount) {
 			continue;
 		}
 
-		double dist;
-		Math::Geo::delazi(org->latitude().value(), org->longitude().value(),
-		                  buffer->lat, buffer->lon, &dist);
-		if ( dist > cutoffDist ) {
-			// station farther then cutoff distance
-			continue;
-		}
-
-		auto assoc = _associationTable.assoc(org, sid);
 		if ( !assoc ) {
 			// No association
 			continue;
