@@ -418,21 +418,12 @@ Seiscomp::Array *Prediction::get(const string &streamID, double mag, double dist
 
 	//SEISCOMP_DEBUG("Load prediction for %s mag %f dist %f", streamID, mag, dist);
 
-	auto it = _bindings.find(streamID);
-	if ( it == _bindings.end() ) {
-		if ( _defaultSoilClass.empty() ) {
-			return nullptr;
-		}
-
-		return trace(_defaultSoilClass, mag, dist);
+	string soilClass = resolvedSoilClass(streamID);
+	if ( soilClass.empty() ) {
+		return nullptr;
 	}
-	else {
-		if ( it->second.soilClass.empty() && _defaultSoilClass.empty() ) {
-			return nullptr;
-		}
 
-		return trace(it->second.soilClass, mag, dist);
-	}
+	return trace(soilClass, mag, dist);
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 

@@ -147,10 +147,10 @@ when ``--max-stations`` limits how many are drawn). A second line underneath
 gives the origin's latitude, longitude, depth and the station search radius
 (cutoff distance) that applied for the best-fitting magnitude value (see
 :confval:`distancePerMagnitude`). The footer summarises the stations that were
-associated but did not contribute, counted by reason (no template, outside the
-cutoff distance for that magnitude, empty buffer, no PGV, correlation window
-too short, non-finite fit), and notes when contributing stations were hidden by
-``--max-stations``.
+associated but did not contribute, counted by reason (no soil class, no
+template, outside the cutoff distance for that magnitude, empty buffer, no
+PGV, correlation window too short, non-finite fit), and notes when
+contributing stations were hidden by ``--max-stations``.
 
 
 Launching from scolv

@@ -1208,9 +1208,16 @@ double App::compute(Origin *org, double mag, int *stationCount,
 			assoc->correlation = -1;
 			assoc->lastMag = Seiscomp::Core::None;
 
+			string soilClass = _prediction.resolvedSoilClass(sid);
+			if ( soilClass.empty() ) {
+				SEISCOMP_WARNING("No soil class for station %s", sid);
+				skip(sid, distKm, "no soil class for station");
+				continue;
+			}
+
 			ArrayPtr array;
 			try {
-				array = _prediction.get(sid, mag, assoc->dist);
+				array = _prediction.trace(soilClass, mag, assoc->dist);
 				if ( !array ) {
 					// No predictions
 					skip(sid, distKm, "no predicted template");
@@ -1375,8 +1382,8 @@ double App::compute(Origin *org, double mag, int *stationCount,
 				se.sid = sid;
 				se.distanceKm = assoc->dist;
 				se.used = true;
-				se.soilClass = _prediction.resolvedSoilClass(sid);
-				se.templatePath = _prediction.tracePath(se.soilClass, mag, assoc->dist);
+				se.soilClass = soilClass;
+				se.templatePath = _prediction.tracePath(soilClass, mag, assoc->dist);
 				se.ttP = assoc->ttP;
 				se.ttS = assoc->ttS;
 				se.pgv = pgv;
