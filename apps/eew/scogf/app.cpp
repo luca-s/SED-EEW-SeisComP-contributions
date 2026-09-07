@@ -1220,14 +1220,14 @@ double App::compute(Origin *org, double mag, int *stationCount,
 				array = _prediction.trace(soilClass, mag, assoc->dist);
 				if ( !array ) {
 					// No predictions
-					skip(sid, distKm, "no predicted template");
+					skip(sid, distKm, "no prediction");
 					continue;
 				}
 			}
 			catch ( exception &e ) {
 				// No predictions
 				SEISCOMP_WARNING("No predictions for %s: %s", sid, e.what());
-				skip(sid, distKm, "no predicted template");
+				skip(sid, distKm, "no prediction");
 				continue;
 			}
 
@@ -1249,10 +1249,10 @@ double App::compute(Origin *org, double mag, int *stationCount,
 			auto predMax = pred->max();
 			double amplification = _prediction.amplification(sid);
 
-			// Physical scale of the template: normalise it to unit peak, bring it
-			// to the GMPE PGV for this magnitude and distance, then apply the site
-			// amplification. Only the amplitude-fit term below uses this; the
-			// shape correlation is invariant to it.
+			// Physical scale of the predicted envelope: normalise it to unit peak,
+			// bring it to the GMPE PGV for this magnitude and distance, then apply
+			// the site amplification. Only the amplitude-fit term below uses this;
+			// the shape correlation is invariant to it.
 			double scale = pgv / predMax * amplification;
 
 			// Correlation window [idx0, idx1) in whole seconds after the origin
@@ -1262,7 +1262,7 @@ double App::compute(Origin *org, double mag, int *stationCount,
 			double startTimeA = assoc->ttP - _settings.preArrivalTimeWindow;
 			double endTimeA = assoc->ttS * _settings.postArrivalTimeShare;
 
-			// Time window of available template (b)
+			// Time window of available predicted envelope (b)
 			double startTimeB = 0;
 			double endTimeB = pred->size();
 
@@ -1305,7 +1305,7 @@ double App::compute(Origin *org, double mag, int *stationCount,
 				continue;
 			}
 
-			// Peak amplitudes over the window: observed vs. GMPE-scaled template.
+			// Peak amplitudes over the window: observed vs. GMPE-scaled predicted.
 			// A gap inside the window can leave fewer observed samples than
 			// count; nObs is what is actually available and is what the
 			// correlation below is computed over.
@@ -1383,7 +1383,7 @@ double App::compute(Origin *org, double mag, int *stationCount,
 				se.distanceKm = assoc->dist;
 				se.used = true;
 				se.soilClass = soilClass;
-				se.templatePath = _prediction.tracePath(soilClass, mag, assoc->dist);
+				se.predictedPath = _prediction.tracePath(soilClass, mag, assoc->dist);
 				se.ttP = assoc->ttP;
 				se.ttS = assoc->ttS;
 				se.pgv = pgv;
@@ -1398,10 +1398,10 @@ double App::compute(Origin *org, double mag, int *stationCount,
 				se.correlation = corr;
 				se.sgf = sgf;
 
-				// Full raw template: sample j is j seconds after the origin time.
-				se.rawTemplateT0 = 0.0;
-				se.rawTemplate.assign(pred->typedData(),
-				                      pred->typedData() + pred->size());
+				// Full raw predicted envelope: sample j is j seconds after the origin time.
+				se.rawPredictedT0 = 0.0;
+				se.rawPredicted.assign(pred->typedData(),
+				                       pred->typedData() + pred->size());
 
 				// Observed envelope over a context window around [idx0, idx1],
 				// clamped to what the buffer actually covers.

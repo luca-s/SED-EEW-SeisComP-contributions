@@ -3,8 +3,8 @@
 	<module name="scogf" category="EEW" author="Swiss Seismological Service">
 		<description>
 		Computes an Origin Goodness of Fit (OGF) for each origin by correlating the
-		observed real-time ground-motion envelopes against predicted envelope
-		templates, and writes the result plus the best-fitting magnitude as origin
+		observed real-time ground-motion envelopes against the predicted
+		envelopes, and writes the result plus the best-fitting magnitude as origin
 		comments for scevent. Optionally derives an envelope magnitude Menv.
 		</description>
 		<configuration>
@@ -56,8 +56,8 @@
 				Minimum length of the correlation window for a station to contribute
 				its station goodness of fit (SGF) to the OGF. The window runs from the
 				P arrival minus preArrivalTimeWindow to the earliest of
-				postArrivalTimeShare * S travel time, the template length and the end of
-				the buffered envelope, so close stations and origins that are only seconds
+				postArrivalTimeShare * S travel time, the predicted envelope length and
+				the end of the buffered envelope, so close stations and origins that are only seconds
 				old can produce windows too short for a meaningful fit. 0 (default)
 				disables the check.
 				</description>
@@ -169,9 +169,9 @@
 				Per-origin debug snapshots of the OGF computation. When enabled,
 				scogf writes one JSON file per origin (overwritten in place on each
 				update) holding, for the magnitude that produced the best fit, every
-				station considered: the raw template, the observed envelope, and the
-				SGF, PGV, amplification and window values. Render it with the
-				'scogf-plot' tool, e.g. from a scolv command action.
+				station considered: the raw predicted envelope, the observed envelope,
+				and the SGF, PGV, amplification and window values. Render it with the
+				'scogfplot' tool, e.g. from a scolv command action.
 				</description>
 				<parameter name="dumpPath" type="path" default="">
 					<description>

@@ -1,6 +1,6 @@
 *scogf* computes, for each incoming origin, an Origin Goodness of Fit (OGF): a
-measure of how well the observed real-time ground-motion envelopes match envelope
-templates predicted for the origin's location, depth and magnitude. The result is
+measure of how well the observed real-time ground-motion envelopes match the
+envelopes predicted for the origin's location, depth and magnitude. The result is
 written to the origin as a comment (``eew.ogf.value``) together with the publicID
 of the best-fitting magnitude (``eew.ogf.mag``), for :ref:`scevent` to use when
 scoring or selecting the preferred origin.
@@ -14,13 +14,14 @@ For each origin *scogf*
 #. buffers the combined horizontal velocity envelopes produced by
    :ref:`sceewenv`,
 #. scores each station by how well the observed envelope matches the predicted
-   template in shape (a correlation coefficient) and in peak amplitude against
-   the GMPE PGV and averages the per-station scores into the overall OGF.
+   one in shape (a correlation coefficient) and in peak amplitude against the
+   GMPE PGV and averages the per-station scores into the overall OGF.
 
 Optionally an envelope magnitude ``Menv`` is derived as the magnitude whose
-templates best fit the observations, see :confval:`envelopeMagnitude.enable`.
+predicted envelopes best fit the observations, see
+:confval:`envelopeMagnitude.enable`.
 
-The predicted templates, GMPE PGV coefficients and per-station soil/amplification
+The predicted envelopes, GMPE PGV coefficients and per-station soil/amplification
 bindings are read from :confval:`predictionArchivePath`.
 
 
@@ -45,8 +46,8 @@ Debugging with scogfplot
 
 Set :confval:`debug.dumpPath` to make *scogf* write, for every processed origin,
 one JSON snapshot describing every station that entered the computation for the
-best-fitting magnitude: the raw template, the observed envelope, and the SGF,
-PGV, amplification and correlation-window values.
+best-fitting magnitude: the raw predicted envelope, the observed envelope, and
+the SGF, PGV, amplification and correlation-window values.
 
 Each origin produces one file ``<debug.dumpPath>/<originID>.json`` (the origin
 publicID with every character outside ``[A-Za-z0-9._-]`` replaced by ``_``). The
@@ -74,11 +75,6 @@ it is ignored.
 
 ``--dump-dir DIR``
    Directory holding the snapshots. Required.
-``--style compact|spec``
-   ``compact`` (default) overlays the observed envelope and the predicted
-   template in one axes per station (the template on a secondary axis, since
-   only its shape matters); ``spec`` draws them in two stacked panels per
-   station instead.
 ``--sort distance|sgf``
    Station order: ``distance`` (nearest first, default) or ``sgf`` (station
    goodness of fit, highest first). Stations that did not contribute are always
@@ -113,28 +109,24 @@ Stations are stacked vertically in the order chosen with ``--sort``. Every
 station block uses a common x-axis of seconds since the origin time and shows:
 
 * **observed** — the buffered real-time envelope (solid dark line);
-* **template** — the predicted envelope, in its own units on a secondary axis
-  (dashed grey line). Only its shape is compared with the observed envelope; the
-  amplitude side of the SGF is a separate check of the observed peak against the
-  GMPE PGV and is not drawn;
+* **predicted** — the envelope predicted for this station, in its own units on a
+  secondary axis (dashed grey line). Only its shape is compared with the observed
+  envelope; the amplitude side of the SGF is a separate check of the observed
+  peak against the GMPE PGV and is not drawn;
 * the **correlation window** used for that station's SGF, drawn as a shaded
   band, and the **P** and **S** travel times as dotted vertical lines.
 
-With ``--style spec`` the observed envelope and the template are drawn in two
-stacked panels per station instead of overlaid; the shaded band and the arrival
-lines are repeated on each panel.
-
 The header line of a station block reads ``NET.STA.LOC   Δ <km>   SGF <value>
-ampFit <value>   corr <value>   maxObs <value>   maxPred <value>   StaAmp
-<factor>   PGV <value>``, where ``corr`` is the shape (Pearson) correlation,
-``ampFit`` the amplitude-fit term, ``maxObs`` / ``maxPred`` the observed and
+AmpFit <value>   Corr <value>   MaxObs <value>   MaxPred <value>   StaAmp
+<factor>   PGV <value>``, where ``Corr`` is the shape (Pearson) correlation,
+``AmpFit`` the amplitude-fit term, ``MaxObs`` / ``MaxPred`` the observed and
 GMPE-scaled predicted peaks in the window, and
-``SGF = sqrt(corr * ampFit)``. The resolved template file path is printed dim
-underneath it.
+``SGF = sqrt(Corr * AmpFit)``. The resolved predicted-envelope file path is
+printed dim underneath it.
 
 The correlation window normally starts at the P arrival time truncated to the
-second, and ends at the earliest of ``ttS * postArrivalTimeShare``, the template
-length and the end of the buffered data. When
+second, and ends at the earliest of ``ttS * postArrivalTimeShare``, the
+predicted envelope length and the end of the buffered data. When
 :confval:`minimumCorrelationWindow` is set, a station whose window comes out
 shorter than that is dropped from the OGF (skip reason *correlation window too
 short*). ``--context`` sets how many seconds of observed envelope are shown
@@ -148,7 +140,7 @@ gives the origin's latitude, longitude, depth and the station search radius
 (cutoff distance) that applied for the best-fitting magnitude value (see
 :confval:`distancePerMagnitude`). The footer summarises the stations that were
 associated but did not contribute, counted by reason (no soil class, no
-template, outside the cutoff distance for that magnitude, empty buffer, no
+prediction, outside the cutoff distance for that magnitude, empty buffer, no
 PGV, correlation window too short, non-finite fit), and notes when
 contributing stations were hidden by ``--max-stations``.
 

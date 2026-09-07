@@ -35,8 +35,8 @@ namespace EEW::OGF {
  *        that produced the best overall fit.
  *
  * All times are seconds relative to the origin time. Series are sampled at 1 Hz
- * (the envelope interval assumed throughout scogf). The scaled template shown in
- * the plot is rawTemplate[i] * scale, at time rawTemplateT0 + i.
+ * (the envelope interval assumed throughout scogf). rawPredicted[i] is at time
+ * rawPredictedT0 + i.
  */
 struct StationEval {
 	std::string sid;                   //!< NET.STA.LOC
@@ -45,14 +45,14 @@ struct StationEval {
 	std::string skipReason;            //!< populated when !used
 
 	std::string soilClass;             //!< resolved envelope soil class
-	std::string templatePath;          //!< resolved V_H.npy template
+	std::string predictedPath;         //!< resolved V_H.npy predicted envelope
 
 	double      ttP{-1};
 	double      ttS{-1};
 	double      pgv{0};
 	double      amplification{1};
 
-	double      predMax{0};            //!< max of the raw prediction template
+	double      predMax{0};            //!< max of the raw predicted envelope
 	double      scale{0};              //!< pgv / predMax * amplification
 
 	int         windowStart{0};        //!< correlation window start [s]
@@ -64,8 +64,8 @@ struct StationEval {
 	double      correlation{0};        //!< Pearson coefficient, clamped >= 0
 	double      sgf{0};                //!< station goodness of fit
 
-	double              rawTemplateT0{0};
-	std::vector<double> rawTemplate;
+	double              rawPredictedT0{0};
+	std::vector<double> rawPredicted;
 
 	double              observedT0{0};
 	std::vector<double> observed;

@@ -41,7 +41,8 @@ namespace EEW::OGF {
 
 
 /**
- * @brief The Prediction class returns predicted GMPE PGV values and envelope templates.
+ * @brief The Prediction class returns predicted GMPE PGV values and predicted
+ *        envelopes.
  */
 class Prediction {
 	// ----------------------------------------------------------------------
@@ -82,7 +83,7 @@ class Prediction {
 		const std::vector<std::string> &zones() const;
 
 		/**
-		 * @brief Returns the available soil classes of the envelope templates.
+		 * @brief Returns the available soil classes of the predicted envelopes.
 		 * @return A list of soil class names.
 		 */
 		const std::vector<std::string> &soilClasses() const;
@@ -112,8 +113,9 @@ class Prediction {
 		std::string resolvedSoilClass(const std::string &streamID) const;
 
 		/**
-		 * @brief Returns the path of the template file that trace() would load
-		 * for the given parameters, without loading it. Empty if none matches.
+		 * @brief Returns the path of the predicted-envelope file that trace()
+		 * would load for the given parameters, without loading it. Empty if none
+		 * matches.
 		 */
 		std::string tracePath(const std::string &soilClass, double mag, double dist) const;
 
@@ -146,9 +148,9 @@ class Prediction {
 	// ----------------------------------------------------------------------
 	private:
 		/**
-		 * @brief Nearest-neighbour lookup of a template file in the envelope
-		 * archive. Shared by trace() and tracePath(). Returns nullptr if the
-		 * soil class is unknown or no magnitude/distance bin matches.
+		 * @brief Nearest-neighbour lookup of a predicted-envelope file in the
+		 * envelope archive. Shared by trace() and tracePath(). Returns nullptr if
+		 * the soil class is unknown or no magnitude/distance bin matches.
 		 */
 		const std::string *lookupTraceFile(const std::string &soilClass,
 		                                   double mag, double dist) const;

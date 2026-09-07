@@ -68,7 +68,7 @@ OriginSnapshot sampleSnapshot() {
 	a.distanceKm = 12.4;
 	a.used = true;
 	a.soilClass = "R";
-	a.templatePath = "/data/scogf/envelopes/R/4.2/12/V_H.npy";
+	a.predictedPath = "/data/scogf/envelopes/R/4.2/12/V_H.npy";
 	a.ttP = 3.1;
 	a.ttS = 5.4;
 	a.pgv = 0.0042;
@@ -82,8 +82,8 @@ OriginSnapshot sampleSnapshot() {
 	a.amplitudeFit = 0.987;
 	a.correlation = 0.71;
 	a.sgf = 0.83;
-	a.rawTemplateT0 = 0.0;
-	a.rawTemplate = { 0.0, 1.0e-4, 5.0e-4, 7.1e-4, 3.0e-4, 1.0e-4 };
+	a.rawPredictedT0 = 0.0;
+	a.rawPredicted = { 0.0, 1.0e-4, 5.0e-4, 7.1e-4, 3.0e-4, 1.0e-4 };
 	a.observedT0 = -2.0;
 	a.observed = { 0.0, 0.0, 1.0e-4, 6.0e-4, 3.9e-3, 2.0e-3, 5.0e-4 };
 	snap.stations.push_back(a);
@@ -92,7 +92,7 @@ OriginSnapshot sampleSnapshot() {
 	b.sid = "CH.MMK.";
 	b.distanceKm = 41.0;
 	b.used = false;
-	b.skipReason = "no predicted template";
+	b.skipReason = "no prediction";
 	snap.stations.push_back(b);
 
 	return snap;
@@ -147,8 +147,10 @@ BOOST_AUTO_TEST_CASE(json_content) {
 	BOOST_CHECK(js.find("\"cutoffDistanceKm\": 55.6") != std::string::npos);
 	BOOST_CHECK(js.find("\"type\": \"MVS\"") != std::string::npos);
 	BOOST_CHECK(js.find("\"sid\": \"CH.SENIN.\"") != std::string::npos);
-	BOOST_CHECK(js.find("\"skipReason\": \"no predicted template\"") != std::string::npos);
+	BOOST_CHECK(js.find("\"skipReason\": \"no prediction\"") != std::string::npos);
 	BOOST_CHECK(js.find("\"sgf\": 0.83") != std::string::npos);
+	BOOST_CHECK(js.find("\"predictedPath\": ") != std::string::npos);
+	BOOST_CHECK(js.find("\"rawPredicted\": ") != std::string::npos);
 	// The skipped station carries no series.
 	auto mmk = js.find("CH.MMK.");
 	BOOST_REQUIRE(mmk != std::string::npos);

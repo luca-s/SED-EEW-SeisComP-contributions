@@ -155,7 +155,7 @@ string toJSON(const OriginSnapshot &snap) {
 
 		if ( s.used ) {
 			os << ", \"soilClass\": " << jsonString(s.soilClass)
-			   << ", \"templatePath\": " << jsonString(s.templatePath)
+			   << ", \"predictedPath\": " << jsonString(s.predictedPath)
 			   << ", \"ttP\": " << num(s.ttP)
 			   << ", \"ttS\": " << num(s.ttS)
 			   << ", \"pgv\": " << num(s.pgv)
@@ -170,7 +170,7 @@ string toJSON(const OriginSnapshot &snap) {
 			   << ", \"correlation\": " << num(s.correlation)
 			   << ", \"sgf\": " << num(s.sgf)
 			   << ", \"series\": {\"sampleRateHz\": 1.0"
-			   << ", \"rawTemplate\": " << jsonSeries(s.rawTemplateT0, s.rawTemplate)
+			   << ", \"rawPredicted\": " << jsonSeries(s.rawPredictedT0, s.rawPredicted)
 			   << ", \"observed\": " << jsonSeries(s.observedT0, s.observed)
 			   << "}";
 		}

@@ -91,8 +91,8 @@ def annotate(ax, s):
         return s.get(key, float("nan"))
 
     header = (
-        "%s   Δ %.0f km   SGF %.2f   ampFit %.2f   corr %.2f   "
-        "maxObs %.3g   maxPred %.3g   StaAmp %.2f   PGV %.3g"
+        "%s   Δ %.0f km   SGF %.2f   AmpFit %.2f   Corr %.2f   "
+        "MaxObs %.3g   MaxPred %.3g   StaAmp %.2f   PGV %.3g"
     ) % (
         s.get("sid", "?"),
         g("distanceKm"),
@@ -104,11 +104,11 @@ def annotate(ax, s):
         g("amplification"),
         s.get("pgv", 0.0),
     )
-    tmpl = s.get("templatePath")
+    predicted = s.get("predictedPath")
     ax.set_title(header, loc="left", fontsize=8, fontfamily="monospace",
-                 pad=13 if tmpl else 6)
-    if tmpl:
-        ax.text(0.0, 1.0, tmpl, transform=ax.transAxes, ha="left", va="bottom",
+                 pad=13 if predicted else 6)
+    if predicted:
+        ax.text(0.0, 1.0, predicted, transform=ax.transAxes, ha="left", va="bottom",
                 fontsize=6.5, color="#8b95a1", fontfamily="monospace")
 
 
@@ -118,26 +118,26 @@ def series_xy(block):
     return [t0 + i for i in range(len(v))], v
 
 
-def plot_station_compact(ax, s, context, legend=False):
-    raw = s.get("series", {}).get("rawTemplate", {"t0": 0, "v": []})
+def plot_station(ax, s, context, legend=False):
+    pred = s.get("series", {}).get("rawPredicted", {"t0": 0, "v": []})
     obs = s.get("series", {}).get("observed", {"t0": 0, "v": []})
 
-    xr, vr = series_xy(raw)
+    xp, vp = series_xy(pred)
     xo, vo = series_xy(obs)
 
     h_obs, = ax.plot(xo, vo, color="#1b2530", lw=1.3, label="observed", zorder=3)
 
-    # The template shares only its shape with the observed envelope (the SGF
+    # The predicted envelope shares only its shape with the observed one (the SGF
     # correlation is scale invariant), so it keeps its own units on a secondary
     # axis. The dashed grey line is identified by the legend; the grey right-hand
     # ticks give its scale.
     twin = ax.twinx()
-    h_raw, = twin.plot(xr, vr, color="#9aa7ad", lw=1.1, ls="--", label="template", zorder=1)
+    h_pred, = twin.plot(xp, vp, color="#9aa7ad", lw=1.1, ls="--", label="predicted", zorder=1)
     twin.tick_params(axis="y", labelsize=7, colors="#9aa7ad")
 
     if legend:
         ax.legend(
-            handles=[h_obs, h_raw],
+            handles=[h_obs, h_pred],
             loc="upper right",
             fontsize=7,
             framealpha=0.85,
@@ -165,32 +165,7 @@ def plot_station_compact(ax, s, context, legend=False):
     annotate(ax, s)
 
 
-def plot_station_spec(axes, s, context):
-    raw = s.get("series", {}).get("rawTemplate", {"t0": 0, "v": []})
-    obs = s.get("series", {}).get("observed", {"t0": 0, "v": []})
-    xr, vr = series_xy(raw)
-    xo, vo = series_xy(obs)
-    w0 = s.get("window", {}).get("startSec", 0)
-    w1 = s.get("window", {}).get("endSec", 0)
-
-    axes[0].plot(xr, vr, color="#9aa7ad", lw=1.2)
-    axes[0].set_ylabel("template", fontsize=8)
-    axes[1].plot(xo, vo, color="#1b2530", lw=1.3)
-    axes[1].set_ylabel("observed", fontsize=8)
-
-    for ax in axes:
-        ax.axvspan(w0, w1, color="#0e6b6a", alpha=0.08)
-        for tt in (s.get("ttP"), s.get("ttS")):
-            if tt is not None and tt >= 0:
-                ax.axvline(tt, color="#b25a12", lw=0.9, ls=":")
-        left = min([0.0] + xo) if xo else 0.0
-        ax.set_xlim(left, w1 + context)
-        ax.tick_params(labelsize=8)
-        ax.margins(y=0.15)
-    annotate(axes[0], s)
-
-
-def build_figure(snap, style, context, sort, max_stations):
+def build_figure(snap, context, sort, max_stations):
     import matplotlib
 
     matplotlib.use("Agg")
@@ -208,23 +183,12 @@ def build_figure(snap, style, context, sort, max_stations):
     hidden = len(used_all) - len(used)
     n = len(used)
 
-    rows_per = 2 if style == "spec" else 1
-    height_per_station = 2.2 if style == "spec" else 1.5
-    fig_h = 2.0 + height_per_station * n
-    fig, axgrid = plt.subplots(
-        n * rows_per,
-        1,
-        figsize=(10, fig_h),
-        squeeze=False,
-        sharex=False,
-    )
+    fig_h = 2.0 + 1.5 * n
+    fig, axgrid = plt.subplots(n, 1, figsize=(10, fig_h), squeeze=False, sharex=False)
     axlist = [a[0] for a in axgrid]
 
     for i, s in enumerate(used):
-        if style == "spec":
-            plot_station_spec(axlist[i * rows_per : (i + 1) * rows_per], s, context)
-        else:
-            plot_station_compact(axlist[i], s, context, legend=(i == 0))
+        plot_station(axlist[i], s, context, legend=(i == 0))
 
     axlist[-1].set_xlabel("seconds since origin time", fontsize=9)
 
@@ -237,7 +201,7 @@ def build_figure(snap, style, context, sort, max_stations):
         len(used_all),
         len(stations),
     )
-    loc_line = "lat %.3f°   lon %.3f°   depth %.1f km   cutoff %.0f km" % (
+    loc_line = "lat %.3f°   lon %.3f°   depth %.1f km   station cutoff distance %.0f km" % (
         org.get("latitude", float("nan")),
         org.get("longitude", float("nan")),
         org.get("depth", float("nan")),
@@ -294,9 +258,6 @@ def main():
     parser.add_argument("eventID", nargs="?", help="event publicID (ignored, accepted for scolv)")
     parser.add_argument("--dump-dir", required=True,
                         help="directory holding the snapshots (scogf 'debug.dumpPath')")
-    parser.add_argument("--style", choices=("compact", "spec"), default="compact",
-                        help="compact: template and observed overlaid (default); "
-                             "spec: template and observed in separate panels")
     parser.add_argument("--sort", choices=("distance", "sgf"), default="distance",
                         help="station order: distance (nearest first, default) or "
                              "sgf (station goodness of fit, highest first)")
@@ -314,7 +275,7 @@ def main():
     path, snap = load_snapshot(dump_dir, args.originID)
 
     try:
-        fig = build_figure(snap, args.style, args.context, args.sort, args.max_stations)
+        fig = build_figure(snap, args.context, args.sort, args.max_stations)
     except SystemExit:
         raise
     except ImportError as exc:
