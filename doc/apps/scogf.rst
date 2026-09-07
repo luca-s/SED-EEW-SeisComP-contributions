@@ -1,6 +1,8 @@
 *scogf* computes, for each incoming origin, an Origin Goodness of Fit (OGF): a
 measure of how well the observed real-time ground-motion envelopes match the
-envelopes predicted for the origin's location, depth and magnitude. The result is
+envelopes predicted for the origin's location, depth and magnitude. It is a
+real-time implementation of the goodness-of-fit measure of
+:ref:`Jozinović et al. (2024) <scogf-references>`. The result is
 written to the origin as a comment (``eew.ogf.value``) together with the publicID
 of the best-fitting magnitude (``eew.ogf.mag``), for :ref:`scevent` to use when
 scoring or selecting the preferred origin.
@@ -13,9 +15,11 @@ For each origin *scogf*
    (:confval:`tableType`, :confval:`table`),
 #. buffers the combined horizontal velocity envelopes produced by
    :ref:`sceewenv`,
-#. scores each station by how well the observed envelope matches the predicted
-   one in shape (a correlation coefficient) and in peak amplitude against the
-   GMPE PGV and averages the per-station scores into the overall OGF.
+#. scores each station by combining a shape term (the correlation between the
+   observed and predicted envelope) and an amplitude term (the observed peak
+   against the predicted peak, i.e. the GMPE PGV scaled by the station
+   amplification), then averages the per-station scores into the overall OGF
+   (see `Method`_).
 
 Optionally an envelope magnitude ``Menv`` is derived as the magnitude whose
 predicted envelopes best fit the observations, see
@@ -23,6 +27,82 @@ predicted envelopes best fit the observations, see
 
 The predicted envelopes, GMPE PGV coefficients and per-station soil/amplification
 bindings are read from :confval:`predictionArchivePath`.
+
+
+Method
+======
+
+*scogf* implements the origin goodness-of-fit proposed by
+:ref:`Jozinović et al. (2024) <scogf-references>`. A source estimate
+(hypocentre and magnitude) is judged by how well the ground motions it
+*predicts* match those actually *observed* in real time, rather than by
+origin-quality proxies such as pick count, azimuthal gap or RMS. The measure is
+absolute (bounded between 0 and 100) and independent of the algorithm that
+produced the origin, so OGF values can be compared across pipelines and against
+a fixed alerting threshold. Jozinović et al. (2024) suggest an OGF around 55 as
+the boundary between an acceptable and a poor solution; the threshold itself is
+applied downstream by :ref:`scevent`.
+
+Predicted envelopes
+-------------------
+
+The predicted horizontal velocity envelopes follow the functional forms of
+:ref:`Cua (2005) <scogf-references>`. Because those were calibrated on
+southern-California data and were found to over-predict Swiss ground motions,
+Jozinović et al. (2024) rescale them with the Swiss ground-motion model of
+:ref:`Cauzzi et al. (2015) <scogf-references>`. *scogf* does not evaluate
+these relations itself; it reads a pre-computed archive
+(:confval:`predictionArchivePath`) holding
+
+* the predicted envelope shape per soil class, magnitude and distance bin
+  (``envelopes/<soil>/<mag>/<dist>/V_H.npy``), nearest-neighbour matched to the
+  origin magnitude and the station distance;
+* the GMPE peak ground velocity (PGV) per zone, magnitude and distance
+  (``GMM.csv`` with the zone polygons in ``GMMpolygon.bna``);
+* the per-station soil class and site amplification factor
+  (``station-config.csv``). Stations missing from that file fall back to
+  :confval:`sensorLocations.defaultSoilClass` and an amplification of 1.
+
+As in the paper, site response enters only through the soil class — typically
+*rock* (EC8 ground types A and B) or *soil* — and the scalar amplification
+factor. The stored envelope shape is normalised to unit peak and then scaled to
+``PGV * amplification`` before the amplitude comparison; the shape correlation
+is unaffected by this scaling.
+
+Station goodness of fit (SGF)
+-----------------------------
+
+For each contributing station the fit combines an amplitude term and a shape
+term, following equations 1–3 of Jozinović et al. (2024):
+
+* **Amplitude fit** ``A = 1 - ((o - m) / (o + m))^2``, where ``o`` is the peak
+  of the observed envelope in the correlation window and ``m`` the peak of the
+  scaled predicted envelope there. ``A`` is 1 for a perfect match and decays
+  towards 0 as the peaks diverge. It depends only on the ratio of the two
+  peaks, which keeps it bounded and independent of earthquake size.
+* **Shape correlation** ``C`` is the normalised zero-lag cross-correlation of
+  the observed and predicted envelope samples over the window: both series are
+  demeaned and normalised by their standard deviation, which makes ``C`` the
+  Pearson correlation coefficient.
+
+The station score is ``SGF = sqrt(A * C)``. The paper's per-station value is
+``G = 100 * SGF``.
+
+The correlation window is described under `Reading the plot`_: it starts at the
+station's predicted P arrival (minus :confval:`preArrivalTimeWindow`) and ends
+at the earliest of :confval:`postArrivalTimeShare` times the S travel time, the
+predicted-envelope length and the end of the buffered data.
+
+Origin goodness of fit (OGF)
+----------------------------
+
+The OGF is ``100`` times the unweighted mean of ``SGF`` over all stations that
+contributed for a given magnitude; stations are not distance-weighted. *scogf*
+evaluates every magnitude attached to the origin (and, when
+:confval:`envelopeMagnitude.enable` is set, every value on the
+:confval:`envelopeMagnitude` grid) and writes the **highest** OGF to
+:confval:`commentID` and the publicID of the magnitude that produced it to
+:confval:`commentMagID`.
 
 
 Showing the OGF in scolv
@@ -112,17 +192,18 @@ station block uses a common x-axis of seconds since the origin time and shows:
 * **predicted** — the envelope predicted for this station, in its own units on a
   secondary axis (dashed grey line). Only its shape is compared with the observed
   envelope; the amplitude side of the SGF is a separate check of the observed
-  peak against the GMPE PGV and is not drawn;
+  peak against the scaled predicted peak (GMPE PGV times station amplification)
+  and is not drawn;
 * the **correlation window** used for that station's SGF, drawn as a shaded
   band, and the **P** and **S** travel times as dotted vertical lines.
 
 The header line of a station block reads ``NET.STA.LOC   Δ <km>   SGF <value>
 AmpFit <value>   Corr <value>   MaxObs <value>   MaxPred <value>   StaAmp
-<factor>   PGV <value>``, where ``Corr`` is the shape (Pearson) correlation,
-``AmpFit`` the amplitude-fit term, ``MaxObs`` / ``MaxPred`` the observed and
-GMPE-scaled predicted peaks in the window, and
-``SGF = sqrt(Corr * AmpFit)``. The resolved predicted-envelope file path is
-printed dim underneath it.
+<factor>   PGV <value>``, where ``Corr`` is the shape correlation ``C``,
+``AmpFit`` the amplitude-fit term ``A``, ``MaxObs`` / ``MaxPred`` the observed
+and scaled predicted peaks in the window, and ``SGF = sqrt(Corr * AmpFit)``
+(the paper's per-station ``G`` is ``100 * SGF``; see `Method`_). The resolved
+predicted-envelope file path is printed dim underneath it.
 
 The correlation window normally starts at the P arrival time truncated to the
 second, and ends at the earliest of ``ttS * postArrivalTimeShare``, the
@@ -180,3 +261,22 @@ Use a custom button to have the plot one click away rather than behind the
 In both cases the origin selected in *scolv* must be one that *scogf* has
 processed. A not-yet-committed relocation has a temporary publicID with no
 snapshot, and *scogfplot* then exits with code 3.
+
+
+.. _scogf-references:
+
+References
+==========
+
+* Jozinović, D., Clinton, J., Massin, F., Böse, M., and Cauzzi, C. (2024).
+  Realtime Selection of Optimal Source Parameters Using Ground Motion
+  Envelopes. *Seismica*, 3(1). doi:`10.26443/seismica.v3i1.1142
+  <https://doi.org/10.26443/seismica.v3i1.1142>`_
+* Cua, G. (2005). *Creating the Virtual Seismologist: developments in ground
+  motion characterization and seismic early warning.* PhD thesis, California
+  Institute of Technology.
+* Cauzzi, C., Edwards, B., Fäh, D., Clinton, J., Wiemer, S., Kästli, P., Cua,
+  G., and Giardini, D. (2015). New predictive equations and site amplification
+  estimates for the next-generation Swiss ShakeMaps. *Geophysical Journal
+  International*, 200(1), 421–438. doi:`10.1093/gji/ggu404
+  <https://doi.org/10.1093/gji/ggu404>`_

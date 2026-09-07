@@ -2,10 +2,13 @@
 <seiscomp>
 	<module name="scogf" category="EEW" author="Swiss Seismological Service">
 		<description>
-		Computes an Origin Goodness of Fit (OGF) for each origin by correlating the
-		observed real-time ground-motion envelopes against the predicted
-		envelopes, and writes the result plus the best-fitting magnitude as origin
-		comments for scevent. Optionally derives an envelope magnitude Menv.
+		Computes an Origin Goodness of Fit (OGF) for each origin by combining an
+		amplitude fit and a shape correlation between the observed real-time
+		ground-motion envelopes and the envelopes predicted for the origin, and
+		writes the result plus the best-fitting magnitude as origin comments for
+		scevent. Optionally derives an envelope magnitude Menv. The method is a
+		real-time implementation of Jozinovic et al. (2024), Seismica 3(1),
+		doi:10.26443/seismica.v3i1.1142.
 		</description>
 		<configuration>
 			<parameter name="cacheSize" type="int" default="1800" unit="s">
@@ -46,9 +49,12 @@
 			</parameter>
 			<parameter name="postArrivalTimeShare" type="double" default="1.5">
 				<description>
-				"the event is over" (event as represented by an origin) - defined as
-				multiple of the s travel time between an origin and the furthest considered
-				station.
+				Multiple of the S travel time that defines the end of the correlation
+				window. Per station the window ends at postArrivalTimeShare * (S
+				travel time from the origin to that station), capped by the predicted
+				envelope length and the buffered data. The same factor applied to the
+				S travel time of the furthest associated station defines when "the
+				event is over" and the origin stops being re-evaluated.
 				</description>
 			</parameter>
 			<parameter name="minimumCorrelationWindow" type="double" default="0" unit="s">
@@ -64,7 +70,13 @@
 			</parameter>
 			<parameter name="predictionArchivePath" type="path" default="@DATADIR@/scogf">
 				<description>
-				The path of the predicted envelopes and ground motion coefficients.
+				Directory holding the pre-computed prediction archive: the predicted
+				envelope shapes per soil class, magnitude and distance bin
+				(envelopes/), the GMPE PGV table (GMM.csv) with its zone polygons
+				(GMMpolygon.bna), and the per-station soil class and site
+				amplification factor (station-config.csv). The predicted envelopes
+				follow Cua (2005), rescaled for Switzerland with the Cauzzi et al.
+				(2015) ground-motion model.
 				</description>
 			</parameter>
 			<parameter name="commentID" type="string" default="eew.ogf.value">
@@ -160,7 +172,12 @@
 				</parameter>
 				<parameter name="defaultSoilClass" type="string">
 					<description>
-					The default sensor location soil class.
+					Soil class used for sensor locations that are not listed in the
+					archive's station-config.csv or whose entry has an empty soil
+					class. Must match one of the soil class directories in the
+					prediction archive (following Jozinovic et al. 2024, typically a
+					rock and a soil class, from EC8 ground types). A station with no
+					resolvable soil class does not contribute to the OGF.
 					</description>
 				</parameter>
 			</group>
