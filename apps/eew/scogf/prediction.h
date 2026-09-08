@@ -29,7 +29,6 @@
 
 
 #include <seiscomp/core/typedarray.h>
-#include <seiscomp/datamodel/origin.h>
 #include <seiscomp/geo/featureset.h>
 
 #include <filesystem>
@@ -120,26 +119,31 @@ class Prediction {
 		std::string tracePath(const std::string &soilClass, double mag, double dist) const;
 
 		/**
-		 * @brief Returns the predicted trace for a streamID.
-		 * This method resolves the channel bindings to get the corresponding
-		 * soil class and calls trace().
-		 * @param streamID The NSLC streamID.
-		 * @param mag The magnitude.
-		 * @param dist The distance in kilometers.
-		 * @return The data array of the trace.
+		 * @brief Returns the name of the GMM zone whose polygon contains the
+		 * given coordinate, or an empty string if none does. Pass the result to
+		 * pgv().
 		 */
-		Seiscomp::Array *get(const std::string &streamID, double mag, double dist);
+		std::string zoneName(double lat, double lon) const;
 
 		/**
-		 * @brief Returns the predicted PGV.
-		 * This method throws an exception if no pgv can be looked up.
-		 * @param org The origin.
+		 * @brief Returns the predicted PGV for a GMM zone (see zoneName()) at the
+		 * nearest magnitude and distance bin.
+		 * This method throws an exception if the zone is unknown or has no bin
+		 * covering the given magnitude and distance.
+		 * @param zone The GMM zone name.
 		 * @param mag The magnitude.
-		 * @param dist The distance in kilometers.
+		 * @param dist The hypocentral distance in kilometers.
 		 * @return The PGV value.
 		 */
-		double pgv(const Seiscomp::DataModel::Origin *org, double mag, double dist) const;
+		double pgv(const std::string &zone, double mag, double dist) const;
 
+		/**
+		 * @brief Returns the site amplification factor bound to a sensor
+		 * location in the archive's station-config.csv, or 1.0 if the stream is
+		 * not listed. The predicted envelope for a station is scaled by the
+		 * GMPE PGV times this factor.
+		 * @param streamID The NET.STA.LOC stream ID.
+		 */
 		double amplification(const std::string &streamID) const;
 
 

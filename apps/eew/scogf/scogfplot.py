@@ -197,32 +197,33 @@ def build_figure(snap, context, sort, max_stations):
     axlist[-1].set_xlabel("seconds since origin time", fontsize=9)
 
     org = snap.get("origin", {})
-    title = "%s    %s %.2f    OGF %.1f    %d/%d stations used" % (
+    mag = snap.get("bestMagnitude", {})
+    title = "%s    %s %.2f    lat %.3f°  lon %.3f°  depth %.1f km" % (
         org.get("publicID", "?"),
-        snap.get("bestMagnitude", {}).get("type", "?"),
-        snap.get("bestMagnitude", {}).get("value", float("nan")),
-        snap.get("ogf", float("nan")),
-        len(used_all),
-        len(stations),
-    )
-    loc_line = (
-        "lat %.3f°   lon %.3f°   depth %.1f km   "
-        "station cutoff distance %.0f km   corr. window t0 %.0f s"
-    ) % (
+        mag.get("type", "?"),
+        mag.get("value", float("nan")),
         org.get("latitude", float("nan")),
         org.get("longitude", float("nan")),
         org.get("depth", float("nan")),
-        snap.get("cutoffDistanceKm", float("nan")),
-        snap.get("t0Sec", float("nan")),
     )
-    # Title and location line are two short lines above the axes; space them by
+    info_line = (
+        "OGF %.1f    station cutoff distance %.0f km    "
+        "%d/%d stations used    zone %s"
+    ) % (
+        snap.get("ogf", float("nan")),
+        snap.get("cutoffDistanceKm", float("nan")),
+        len(used_all),
+        len(stations),
+        org.get("zone") or "—",
+    )
+    # Title and info line are two short lines above the axes; space them by
     # a fixed number of inches (converted to a figure fraction) so the gap
     # stays legible regardless of the station count / figure height.
     title_y = 1 - 0.25 / fig_h
     loc_y = 1 - 0.55 / fig_h
     top_rect = 1 - 0.85 / fig_h
     fig.suptitle(title, fontsize=11, fontfamily="monospace", y=title_y)
-    fig.text(0.5, loc_y, loc_line, fontsize=8.5, fontfamily="monospace",
+    fig.text(0.5, loc_y, info_line, fontsize=8.5, fontfamily="monospace",
              color="#5b6675", ha="center")
 
     parts = ["generator %s" % snap.get("generator", "scogf")]

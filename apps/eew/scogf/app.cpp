@@ -888,6 +888,27 @@ void App::process(Origin *org, Evaluation &eval) {
 	eval.bestMagnitude = {};
 	eval.gof = -1;
 
+	if ( !eval.zone ) {
+		string z;
+		try {
+			z = _prediction.zoneName(org->latitude().value(),
+			                         org->longitude().value());
+		}
+		catch ( ... ) {}
+		if ( z.empty() ) {
+			SEISCOMP_WARNING("%s: origin is outside every GMM zone; no predicted "
+			                 "PGV, OGF not computed", org->publicID());
+		}
+		eval.zone = std::move(z);
+	}
+
+	if ( eval.zone->empty() ) {
+		eval.dirty = false;
+		return;
+	}
+
+	const string &zone = *eval.zone;
+
 	// Debug snapshot: keep the per-station detail from the compute() call that
 	// wins the overall GOF (not the last one).
 	const bool wantSnapshot = !_settings.debug.dumpPath.empty();
@@ -904,7 +925,7 @@ void App::process(Origin *org, Evaluation &eval) {
 		for ( double m = _settings.envelopeMagnitude.minimum;
 		      m < _settings.envelopeMagnitude.maximum;
 		      m += _settings.envelopeMagnitude.spacing ) {
-			auto gof = compute(org, m, &stationCount,
+			auto gof = compute(org, m, zone, &stationCount,
 			                   wantSnapshot ? &candDetail : nullptr);
 			if ( isfinite(gof) && stationCount >= _settings.minimumStations &&
 			     (!envMagGOF || (*envMagGOF < gof)) ) {
@@ -982,7 +1003,7 @@ void App::process(Origin *org, Evaluation &eval) {
 		}
 
 		int stationCount;
-		auto gof = compute(org, mag, &stationCount,
+		auto gof = compute(org, mag, zone, &stationCount,
 		                   wantSnapshot ? &candDetail : nullptr);
 		if ( isfinite(gof) && stationCount >= _settings.minimumStations &&
 		     gof >= eval.gof ) {
@@ -1057,7 +1078,7 @@ void App::process(Origin *org, Evaluation &eval) {
 	if ( wantSnapshot && eval.gof >= 0
 	  && any_of(snapDetail.begin(), snapDetail.end(),
 	            [](const StationEval &s) { return s.used; }) ) {
-		writeDebugSnapshot(org, eval, snapMagID, snapMagType, snapMagValue, snapDetail);
+		writeDebugSnapshot(org, eval, zone, snapMagID, snapMagType, snapMagValue, snapDetail);
 	}
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
@@ -1067,8 +1088,9 @@ void App::process(Origin *org, Evaluation &eval) {
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 void App::writeDebugSnapshot(Origin *org, const Evaluation &eval,
-                             const string &magID, const string &magType,
-                             double magValue, const vector<StationEval> &detail) {
+                             const string &zone, const string &magID,
+                             const string &magType, double magValue,
+                             const vector<StationEval> &detail) {
 	OriginSnapshot snap;
 	snap.publicID = org->publicID();
 	try { snap.time = org->time().value().iso(); } catch ( ... ) {}
@@ -1076,6 +1098,7 @@ void App::writeDebugSnapshot(Origin *org, const Evaluation &eval,
 	try { snap.latitude = org->latitude().value(); } catch ( ... ) {}
 	try { snap.longitude = org->longitude().value(); } catch ( ... ) {}
 	try { snap.depth = org->depth().value(); } catch ( ... ) {}
+	snap.zone = zone;
 
 	snap.ogf = eval.gof;
 	snap.minimumStations = _settings.minimumStations;
@@ -1154,10 +1177,10 @@ double App::commonWindowStartSec(Origin *org) const {
 
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-double App::compute(Origin *org, const Magnitude *mag, int *stationCount,
-                    vector<StationEval> *detail) {
+double App::compute(Origin *org, const Magnitude *mag, const string &zone,
+                    int *stationCount, vector<StationEval> *detail) {
 	SEISCOMP_DEBUG("Compute %s %s %s", org->publicID(), mag->publicID(), mag->type());
-	return compute(org, mag->magnitude().value(), stationCount, detail);
+	return compute(org, mag->magnitude().value(), zone, stationCount, detail);
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
@@ -1165,7 +1188,7 @@ double App::compute(Origin *org, const Magnitude *mag, int *stationCount,
 
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-double App::compute(Origin *org, double mag, int *stationCount,
+double App::compute(Origin *org, double mag, const string &zone, int *stationCount,
                     vector<StationEval> *detail) {
 	vector<double> gofs;
 
@@ -1257,7 +1280,7 @@ double App::compute(Origin *org, double mag, int *stationCount,
 
 			double pgv = 1.0;
 			try {
-				pgv = _prediction.pgv(org, mag, assoc->hypoDist);
+				pgv = _prediction.pgv(zone, mag, assoc->hypoDist);
 			}
 			catch ( exception &e ) {
 				SEISCOMP_WARNING("No pgv: %s", e.what());

@@ -238,11 +238,13 @@ window comes out shorter than that is dropped from the OGF (skip reason
 envelope are shown after the window; the envelope before ``t0`` is always shown.
 
 The figure title carries the origin publicID, the best-fitting magnitude type
-and value, the overall OGF and the contributing-station count (all of them, even
-when ``--max-stations`` limits how many are drawn). A second line underneath
-gives the origin's latitude, longitude, depth, the station search radius
-(cutoff distance) that applied for the best-fitting magnitude value (see
-:confval:`distancePerMagnitude`) and the common correlation-window start ``t0``.
+and value, and the origin's latitude, longitude and depth. A second line
+underneath gives the overall OGF, the station search radius (cutoff distance)
+that applied for the best-fitting magnitude value (see
+:confval:`distancePerMagnitude`), the contributing-station count (out of the
+associated stations, even when ``--max-stations`` limits how many are drawn) and
+the GMM zone whose polygon contains the origin (``—`` if the origin is outside
+every zone, in which case no PGV is available and stations are skipped).
 The footer summarises the stations that were associated but did not contribute,
 counted by reason (no soil class, no prediction, outside the cutoff distance for
 that magnitude, empty buffer, no PGV, no predicted P arrival, predicted P not

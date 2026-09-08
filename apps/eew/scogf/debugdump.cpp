@@ -131,6 +131,7 @@ string toJSON(const OriginSnapshot &snap) {
 	   << ", \"latitude\": " << num(snap.latitude)
 	   << ", \"longitude\": " << num(snap.longitude)
 	   << ", \"depth\": " << num(snap.depth)
+	   << ", \"zone\": " << jsonString(snap.zone)
 	   << "},\n"
 	   << "  \"ogf\": " << num(snap.ogf) << ",\n"
 	   << "  \"minimumStations\": " << snap.minimumStations << ",\n"

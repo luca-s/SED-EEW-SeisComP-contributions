@@ -118,9 +118,11 @@ class App : public Seiscomp::Client::Application {
 		void process(Seiscomp::DataModel::Origin *org, Seiscomp::IO::RecordStream *rs);
 		void process(Seiscomp::DataModel::Origin *org, Evaluation &eval);
 		double compute(Seiscomp::DataModel::Origin *org,
-		               const Seiscomp::DataModel::Magnitude *mag, int *stationCount = nullptr,
+		               const Seiscomp::DataModel::Magnitude *mag, const std::string &zone,
+		               int *stationCount = nullptr,
 		               std::vector<StationEval> *detail = nullptr);
-		double compute(Seiscomp::DataModel::Origin *org, double mag, int *stationCount = nullptr,
+		double compute(Seiscomp::DataModel::Origin *org, double mag, const std::string &zone,
+		               int *stationCount = nullptr,
 		               std::vector<StationEval> *detail = nullptr);
 
 		double cutoffDistanceKm(double mag) const;
@@ -128,8 +130,9 @@ class App : public Seiscomp::Client::Application {
 		double commonWindowStartSec(Seiscomp::DataModel::Origin *org) const;
 
 		void writeDebugSnapshot(Seiscomp::DataModel::Origin *org, const Evaluation &eval,
-		                        const std::string &magID, const std::string &magType,
-		                        double magValue, const std::vector<StationEval> &detail);
+		                        const std::string &zone, const std::string &magID,
+		                        const std::string &magType, double magValue,
+		                        const std::vector<StationEval> &detail);
 
 
 	// ----------------------------------------------------------------------

@@ -414,16 +414,47 @@ std::string Prediction::tracePath(const std::string &soilClass,
 
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-Seiscomp::Array *Prediction::get(const string &streamID, double mag, double dist) {
-
-	//SEISCOMP_DEBUG("Load prediction for %s mag %f dist %f", streamID, mag, dist);
-
-	string soilClass = resolvedSoilClass(streamID);
-	if ( soilClass.empty() ) {
-		return nullptr;
+double Prediction::pgv(const std::string &zone, double mag, double dist) const {
+	auto it = _gmm.find(zone);
+	if ( it == _gmm.end() ) {
+		throw runtime_error(stringify("no GMM predictions for zone '%s'", zone));
 	}
 
-	return trace(soilClass, mag, dist);
+	const auto &magnitudes = it->second;
+	auto mit = magnitudes.lower_bound(mag);
+	if ( mit == magnitudes.end() ||
+	    (mit == magnitudes.begin() && mit->first > mag) ) {
+		// mag is smaller or greater than all keys
+		throw runtime_error(stringify("no pgv for zone '%s' at magnitude %f",
+		                              zone, mag));
+	}
+	else if ( mit != magnitudes.begin() ) {
+		// find the closest mag between the greater and smaller neighbours
+		auto prev = mit;
+		--prev;
+		if ( (mit->first - mag) > (mag - prev->first) ) {
+			mit = prev;
+		}
+	}
+
+	const auto &distances = mit->second;
+	auto dit = distances.lower_bound(dist);
+	if ( dit == distances.end()  ||
+	    (dit == distances.begin() && dit->first > dist) ) {
+		// dist is smaller or greater than all keys
+		throw runtime_error(stringify("no pgv for zone '%s' at distance %f (magnitude %f)",
+		                              zone, dist, mag));
+	}
+	else if ( dit != distances.begin() ) {
+		// find the closest distance between the greater and smaller neighbours
+		auto prev = dit;
+		--prev;
+		if ( (dit->first - dist) > (dist - prev->first) ) {
+			dit = prev;
+		}
+	}
+
+	return dit->second;
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
@@ -431,60 +462,14 @@ Seiscomp::Array *Prediction::get(const string &streamID, double mag, double dist
 
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-double Prediction::pgv(const Seiscomp::DataModel::Origin *org,
-                       double mag, double dist) const {
+std::string Prediction::zoneName(double lat, double lon) const {
 	for ( const auto &f : _zones.features() ) {
-		if ( f->contains({ org->latitude().value(), org->longitude().value() }) ) {
-
-			auto it = _gmm.find(f->name());
-			if ( it == _gmm.end() ) {
-				SEISCOMP_WARNING("%s: no zone (%s) predictions found",
-				                 org->publicID(), f->name());
-				break;
-			}
-
-			const auto &magnitudes = it->second;
-			auto mit = magnitudes.lower_bound(mag);
-			if ( mit == magnitudes.end() ||
-			    (mit == magnitudes.begin() && mit->first > mag) ) {
-				// mag is smaller or greater than all keys
-				SEISCOMP_DEBUG("No pgv(%s) available for magnitude %f", f->name(), mag);
-				continue;
-			}
-			else if ( mit != magnitudes.begin() ) {
-				// find the closest mag between the greater and smaller neighbours
-				auto prev = mit;
-				--prev;
-				if ( (mit->first - mag) > (mag - prev->first) ) {
-					mit = prev;
-				}
-			}
-
-			const auto &distances = mit->second;
-			auto dit = distances.lower_bound(dist);
-			if ( dit == distances.end()  ||
-			    (dit == distances.begin() && dit->first > dist) ) {
-				// dist is smaller or greater than all keys
-				SEISCOMP_DEBUG("No pgv(%s) available for distance %f (mag %f)",
-				                f->name(), dist, mag);
-				continue;
-			}
-			else if ( dit != distances.begin() ) {
-				// find the closest distance between the greater and smaller neighbours
-				auto prev = dit;
-				--prev;
-				if ( (dit->first - dist) > (dist - prev->first) ) {
-					dit = prev;
-				}
-			}
-
-			//SEISCOMP_DEBUG("%s: pgv: %s, %f (%f), %f (%f) = %f", org->publicID(),
-			//               f->name(), mit->first, mag, dit->first, dist, dit->second);
-			return dit->second;
+		if ( f->contains({ lat, lon }) ) {
+			return f->name();
 		}
 	}
 
-	throw runtime_error("no pgv for origin");
+	return {};
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
