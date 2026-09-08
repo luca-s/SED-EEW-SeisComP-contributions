@@ -40,7 +40,8 @@ namespace EEW::OGF {
  */
 struct StationEval {
 	std::string sid;                   //!< NET.STA.LOC
-	double      distanceKm{-1};
+	double      distanceKm{-1};        //!< epicentral distance
+	double      hypoDistanceKm{-1};    //!< hypocentral distance (used for the envelope/PGV lookup)
 	bool        used{false};           //!< contributed to the OGF mean
 	std::string skipReason;            //!< populated when !used
 

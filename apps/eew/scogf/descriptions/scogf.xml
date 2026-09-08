@@ -27,7 +27,9 @@
 			</parameter>
 			<parameter name="maximumDistance" type="double" default="5" unit="degrees">
 				<description>
-				Defines the absolute upper limit for the station search radius.
+				Defines the absolute upper limit for the station search radius. The
+				search radius is epicentral; the predicted-envelope and PGV archive
+				lookup itself uses hypocentral distance.
 				</description>
 			</parameter>
 			<parameter name="minimumStations" type="int" default="1">
@@ -71,8 +73,8 @@
 			<parameter name="predictionArchivePath" type="path" default="@DATADIR@/scogf">
 				<description>
 				Directory holding the pre-computed prediction archive: the predicted
-				envelope shapes per soil class, magnitude and distance bin
-				(envelopes/), the GMPE PGV table (GMM.csv) with its zone polygons
+				envelope shapes per soil class, magnitude and hypocentral distance
+				bin (envelopes/), the GMPE PGV table (GMM.csv) with its zone polygons
 				(GMMpolygon.bna), and the per-station soil class and site
 				amplification factor (station-config.csv). The predicted envelopes
 				follow Cua (2005), rescaled for Switzerland with the Cauzzi et al.

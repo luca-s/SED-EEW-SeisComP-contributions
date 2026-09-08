@@ -45,7 +45,8 @@ struct Evaluation {
 
 
 struct Association {
-	double               dist{-1};
+	double               dist{-1};     //!< epicentral distance [km], used for the station cutoff
+	double               hypoDist{-1}; //!< hypocentral distance [km], used for the predicted-envelope and PGV lookup
 	double               ttP{-1}; //!< P travel time w.r.t. origin time
 	double               ttS{-1}; //!< S travel time w.r.t. origin time
 	Seiscomp::Core::Time endTime; //!< Envelope end time for correlation computation

@@ -147,6 +147,7 @@ string toJSON(const OriginSnapshot &snap) {
 		os << (i ? ",\n" : "\n") << "    {"
 		   << "\"sid\": " << jsonString(s.sid)
 		   << ", \"distanceKm\": " << num(s.distanceKm)
+		   << ", \"hypoDistanceKm\": " << num(s.hypoDistanceKm)
 		   << ", \"used\": " << (s.used ? "true" : "false");
 
 		if ( !s.skipReason.empty() ) {

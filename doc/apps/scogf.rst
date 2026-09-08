@@ -56,9 +56,9 @@ these relations itself; it reads a pre-computed archive
 
 * the predicted envelope shape per soil class, magnitude and distance bin
   (``envelopes/<soil>/<mag>/<dist>/V_H.npy``), nearest-neighbour matched to the
-  origin magnitude and the station distance;
-* the GMPE peak ground velocity (PGV) per zone, magnitude and distance
-  (``GMM.csv`` with the zone polygons in ``GMMpolygon.bna``);
+  origin magnitude and the station **hypocentral** distance;
+* the GMPE peak ground velocity (PGV) per zone, magnitude and (hypocentral)
+  distance (``GMM.csv`` with the zone polygons in ``GMMpolygon.bna``);
 * the per-station soil class and site amplification factor
   (``station-config.csv``). Stations missing from that file fall back to
   :confval:`sensorLocations.defaultSoilClass` and an amplification of 1.
@@ -68,6 +68,11 @@ As in the paper, site response enters only through the soil class — typically
 factor. The stored envelope shape is normalised to unit peak and then scaled to
 ``PGV * amplification`` before the amplitude comparison; the shape correlation
 is unaffected by this scaling.
+
+The archive is indexed by hypocentral distance (the Cua 2005 and Cauzzi et al.
+2015 relations are defined on it), so *scogf* looks up both the envelope and the
+PGV at ``sqrt(epicentral^2 + depth^2)``. The station search radius
+(:confval:`maximumDistance`, :confval:`distancePerMagnitude`) is epicentral.
 
 Station goodness of fit (SGF)
 -----------------------------
@@ -197,13 +202,15 @@ station block uses a common x-axis of seconds since the origin time and shows:
 * the **correlation window** used for that station's SGF, drawn as a shaded
   band, and the **P** and **S** travel times as dotted vertical lines.
 
-The header line of a station block reads ``NET.STA.LOC   Δ <km>   SGF <value>
-AmpFit <value>   Corr <value>   MaxObs <value>   MaxPred <value>   StaAmp
-<factor>   PGV <value>``, where ``Corr`` is the shape correlation ``C``,
-``AmpFit`` the amplitude-fit term ``A``, ``MaxObs`` / ``MaxPred`` the observed
-and scaled predicted peaks in the window, and ``SGF = sqrt(Corr * AmpFit)``
-(the paper's per-station ``G`` is ``100 * SGF``; see `Method`_). The resolved
-predicted-envelope file path is printed dim underneath it.
+The header line of a station block reads ``NET.STA.LOC   Δ <km> (Rhyp <km>)
+SGF <value>   AmpFit <value>   Corr <value>   MaxObs <value>   MaxPred <value>
+StaAmp <factor>   PGV <value>``, where ``Δ`` is the epicentral distance, ``Rhyp``
+the hypocentral distance that selected the predicted-envelope and PGV bins,
+``Corr`` is the shape correlation ``C``, ``AmpFit`` the amplitude-fit term
+``A``, ``MaxObs`` / ``MaxPred`` the observed and scaled predicted peaks in the
+window, and ``SGF = sqrt(Corr * AmpFit)`` (the paper's per-station ``G`` is
+``100 * SGF``; see `Method`_). The resolved predicted-envelope file path is
+printed dim underneath it.
 
 The correlation window normally starts at the P arrival time truncated to the
 second, and ends at the earliest of ``ttS * postArrivalTimeShare``, the

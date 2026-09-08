@@ -66,6 +66,7 @@ OriginSnapshot sampleSnapshot() {
 	StationEval a;
 	a.sid = "CH.SENIN.";
 	a.distanceKm = 12.4;
+	a.hypoDistanceKm = 14.8;
 	a.used = true;
 	a.soilClass = "R";
 	a.predictedPath = "/data/scogf/envelopes/R/4.2/12/V_H.npy";
@@ -91,6 +92,7 @@ OriginSnapshot sampleSnapshot() {
 	StationEval b;
 	b.sid = "CH.MMK.";
 	b.distanceKm = 41.0;
+	b.hypoDistanceKm = 41.8;
 	b.used = false;
 	b.skipReason = "no prediction";
 	snap.stations.push_back(b);
@@ -147,6 +149,7 @@ BOOST_AUTO_TEST_CASE(json_content) {
 	BOOST_CHECK(js.find("\"cutoffDistanceKm\": 55.6") != std::string::npos);
 	BOOST_CHECK(js.find("\"type\": \"MVS\"") != std::string::npos);
 	BOOST_CHECK(js.find("\"sid\": \"CH.SENIN.\"") != std::string::npos);
+	BOOST_CHECK(js.find("\"hypoDistanceKm\": 14.8") != std::string::npos);
 	BOOST_CHECK(js.find("\"skipReason\": \"no prediction\"") != std::string::npos);
 	BOOST_CHECK(js.find("\"sgf\": 0.83") != std::string::npos);
 	BOOST_CHECK(js.find("\"predictedPath\": ") != std::string::npos);

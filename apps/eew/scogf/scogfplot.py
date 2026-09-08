@@ -90,12 +90,16 @@ def annotate(ax, s):
     def g(key):
         return s.get(key, float("nan"))
 
+    hypo = s.get("hypoDistanceKm")
+    dist_str = "Δ %.0f km" % g("distanceKm")
+    if hypo is not None and hypo >= 0:
+        dist_str += " (Rhyp %.0f)" % hypo
     header = (
-        "%s   Δ %.0f km   SGF %.2f   AmpFit %.2f   Corr %.2f   "
+        "%s   %s   SGF %.2f   AmpFit %.2f   Corr %.2f   "
         "MaxObs %.3g   MaxPred %.3g   StaAmp %.2f   PGV %.3g"
     ) % (
         s.get("sid", "?"),
-        g("distanceKm"),
+        dist_str,
         g("sgf"),
         g("amplitudeFit"),
         g("correlation"),

@@ -701,6 +701,8 @@ Association *App::addAssociation(Origin *org,
 	auto assoc = _associationTable.insert(org, sid);
 	assoc->dist = Math::Geo::deg2km(dist);
 
+	assoc->hypoDist = std::hypot(assoc->dist, depth);
+
 	// Travel times are assumed to be sorted by time
 	for ( const auto &tt : *ttimes ) {
 		auto ph = Util::getShortPhaseName(tt.phase);
@@ -1149,16 +1151,17 @@ double App::compute(Origin *org, double mag, int *stationCount,
 
 	// Records a station that did not contribute to the OGF, for the debug
 	// snapshot only. No-op when detail collection is off.
-	auto skip = [detail](const string &sid, double distKm, const char *reason) {
+	auto skip = [detail](const Association *assoc, const string &sid, const char *reason) {
 		if ( !detail ) {
 			return;
 		}
 		StationEval se;
 		se.sid = sid;
-		se.distanceKm = distKm;
+		se.distanceKm = assoc->dist;
+		se.hypoDistanceKm = assoc->hypoDist;
 		se.skipReason = reason;
 		detail->push_back(std::move(se));
-		SEISCOMP_DEBUG("Skip %s at %.1fkm: %s", sid, distKm, reason);
+		SEISCOMP_DEBUG("Skip %s at %.1fkm: %s", sid, assoc->dist, reason);
 	};
 
 	const double cutoffDistKm = cutoffDistanceKm(mag);
@@ -1181,20 +1184,14 @@ double App::compute(Origin *org, double mag, int *stationCount,
 
 		auto it = _envelopeBuffers.find(sid);
 		if ( it == _envelopeBuffers.end() ) {
-			skip(sid, distKm, "no envelope buffer");
+			skip(assoc, sid, "no envelope buffer");
 			continue;
 		}
 
 		auto buffer = it->second.get();
 		if ( !buffer || buffer->empty() ) {
 			// No envelopes
-			skip(sid, distKm, "no envelopes buffered");
-			continue;
-		}
-
-		if ( !assoc ) {
-			// No association
-			skip(sid, distKm, "no association");
+			skip(assoc, sid, "no envelopes buffered");
 			continue;
 		}
 
@@ -1211,33 +1208,33 @@ double App::compute(Origin *org, double mag, int *stationCount,
 			string soilClass = _prediction.resolvedSoilClass(sid);
 			if ( soilClass.empty() ) {
 				SEISCOMP_WARNING("No soil class for station %s", sid);
-				skip(sid, distKm, "no soil class for station");
+				skip(assoc, sid, "no soil class for station");
 				continue;
 			}
 
 			ArrayPtr array;
 			try {
-				array = _prediction.trace(soilClass, mag, assoc->dist);
+				array = _prediction.trace(soilClass, mag, assoc->hypoDist);
 				if ( !array ) {
 					// No predictions
-					skip(sid, distKm, "no prediction");
+					skip(assoc, sid, "no prediction");
 					continue;
 				}
 			}
 			catch ( exception &e ) {
 				// No predictions
 				SEISCOMP_WARNING("No predictions for %s: %s", sid, e.what());
-				skip(sid, distKm, "no prediction");
+				skip(assoc, sid, "no prediction");
 				continue;
 			}
 
 			double pgv = 1.0;
 			try {
-				pgv = _prediction.pgv(org, mag, assoc->dist);
+				pgv = _prediction.pgv(org, mag, assoc->hypoDist);
 			}
 			catch ( exception &e ) {
 				SEISCOMP_WARNING("No pgv: %s", e.what());
-				skip(sid, distKm, "no predicted PGV");
+				skip(assoc, sid, "no predicted PGV");
 				continue;
 			}
 
@@ -1277,13 +1274,13 @@ double App::compute(Origin *org, double mag, int *stationCount,
 			int idx1 = static_cast<int>(endTime);
 
 			if ( idx0 >= idx1 ) {
-				skip(sid, distKm, "empty correlation time window");
+				skip(assoc, sid, "empty correlation time window");
 				continue;
 			}
 
 			// Too short a window
 			if ( endTime - startTime < _settings.minimumCorrelationWindow ) {
-				skip(sid, distKm, "correlation window too short");
+				skip(assoc, sid, "correlation window too short");
 				continue;
 			}
 
@@ -1301,7 +1298,7 @@ double App::compute(Origin *org, double mag, int *stationCount,
 			if ( bit == buffer->end() ) {
 				// A gap swallowed the whole window: no sample within [idx0, idx1)
 				// even though the buffer's overall time span covers it.
-				skip(sid, distKm, "empty correlation time window");
+				skip(assoc, sid, "empty correlation time window");
 				continue;
 			}
 
@@ -1320,7 +1317,7 @@ double App::compute(Origin *org, double mag, int *stationCount,
 			}
 
 			if ( nObs == 0 ) {
-				skip(sid, distKm, "empty correlation time window");
+				skip(assoc, sid, "empty correlation time window");
 				continue;
 			}
 
@@ -1369,7 +1366,7 @@ double App::compute(Origin *org, double mag, int *stationCount,
 					               "ampFit=%g corr=%g",
 					               sid, idx0, idx1, nObs, assoc->dist, mag, pgv,
 					               amplification, scale, maxObs, maxPredWinScaled, amplitudeFit, corr);
-					skip(sid, distKm, "non-finite station GoF");
+					skip(assoc, sid, "non-finite station GoF");
 					continue;
 				}
 			}
@@ -1381,9 +1378,10 @@ double App::compute(Origin *org, double mag, int *stationCount,
 				StationEval se;
 				se.sid = sid;
 				se.distanceKm = assoc->dist;
+				se.hypoDistanceKm = assoc->hypoDist;
 				se.used = true;
 				se.soilClass = soilClass;
-				se.predictedPath = _prediction.tracePath(soilClass, mag, assoc->dist);
+				se.predictedPath = _prediction.tracePath(soilClass, mag, assoc->hypoDist);
 				se.ttP = assoc->ttP;
 				se.ttS = assoc->ttS;
 				se.pgv = pgv;
