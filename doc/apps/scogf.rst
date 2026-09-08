@@ -15,11 +15,11 @@ For each origin *scogf*
    (:confval:`tableType`, :confval:`table`),
 #. buffers the combined horizontal velocity envelopes produced by
    :ref:`sceewenv`,
-#. scores each station by combining a shape term (the correlation between the
-   observed and predicted envelope) and an amplitude term (the observed peak
-   against the predicted peak, i.e. the GMPE PGV scaled by the station
-   amplification), then averages the per-station scores into the overall OGF
-   (see `Method`_).
+#. once a station's predicted P arrival is covered by its buffered data, scores
+   it by combining a shape term (the correlation between the observed and
+   predicted envelope) and an amplitude term (the observed peak against the
+   predicted peak, i.e. the GMPE PGV scaled by the station amplification), then
+   averages the per-station scores into the overall OGF (see `Method`_).
 
 Optionally an envelope magnitude ``Menv`` is derived as the magnitude whose
 predicted envelopes best fit the observations, see
@@ -100,6 +100,18 @@ predicted P arrival at the closest associated station minus
 per station, at the earliest of :confval:`postArrivalTimeShare` times that
 station's S travel time, the predicted-envelope length and the end of the
 buffered data.
+
+Station selection
+-----------------
+
+Following Jozinović et al. (2024), a station contributes to the OGF only once
+its **predicted P arrival** is covered by the ground-motion data buffered for
+it — that is, once the correlation window reaches that station's ``ttP``. Early
+in an event, or for a high-latency station, the window would otherwise hold
+only pre-P noise. Stations are also limited to the search radius
+(:confval:`maximumDistance`, :confval:`distancePerMagnitude`). Stations that are
+associated but not yet contributing appear in the debug snapshot with skip
+reason *predicted P not yet arrived*.
 
 Origin goodness of fit (OGF)
 ----------------------------
@@ -233,8 +245,9 @@ gives the origin's latitude, longitude, depth, the station search radius
 :confval:`distancePerMagnitude`) and the common correlation-window start ``t0``.
 The footer summarises the stations that were associated but did not contribute,
 counted by reason (no soil class, no prediction, outside the cutoff distance for
-that magnitude, empty buffer, no PGV, correlation window too short, non-finite
-fit), and notes when contributing stations were hidden by ``--max-stations``.
+that magnitude, empty buffer, no PGV, no predicted P arrival, predicted P not
+yet arrived, correlation window too short, non-finite fit), and notes when
+contributing stations were hidden by ``--max-stations``.
 
 
 Launching from scolv

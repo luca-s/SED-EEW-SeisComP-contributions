@@ -1305,6 +1305,17 @@ double App::compute(Origin *org, double mag, int *stationCount,
 				continue;
 			}
 
+			// A station contributes only once the data buffered for it covers the
+			// second of its predicted P arrival
+			if ( assoc->ttP < 0 ) {
+				skip(assoc, sid, "no predicted P arrival");
+				continue;
+			}
+			if ( idx1 <= static_cast<int>(assoc->ttP) ) {
+				skip(assoc, sid, "predicted P not yet arrived");
+				continue;
+			}
+
 			// Too short a window
 			if ( endTime - startTime < _settings.minimumCorrelationWindow ) {
 				skip(assoc, sid, "correlation window too short");
