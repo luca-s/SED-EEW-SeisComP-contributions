@@ -187,7 +187,7 @@ def build_figure(snap, context, sort, max_stations):
     hidden = len(used_all) - len(used)
     n = len(used)
 
-    fig_h = 2.0 + 1.5 * n
+    fig_h = 2.0 + (0.35 if skipped else 0.0) + 1.5 * n
     fig, axgrid = plt.subplots(n, 1, figsize=(10, fig_h), squeeze=False, sharex=False)
     axlist = [a[0] for a in axgrid]
 
@@ -208,28 +208,17 @@ def build_figure(snap, context, sort, max_stations):
     )
     info_line = (
         "OGF %.1f    station cutoff distance %.0f km    "
-        "%d/%d stations used    region %s"
+        "%d/%d stations used    region %s    t0 %.0f s"
     ) % (
         snap.get("ogf", float("nan")),
         snap.get("cutoffDistanceKm", float("nan")),
         len(used_all),
         len(stations),
         org.get("region") or "—",
+        snap.get("t0Sec", float("nan")),
     )
-    # Title and info line are two short lines above the axes; space them by
-    # a fixed number of inches (converted to a figure fraction) so the gap
-    # stays legible regardless of the station count / figure height.
-    title_y = 1 - 0.25 / fig_h
-    loc_y = 1 - 0.55 / fig_h
-    top_rect = 1 - 0.85 / fig_h
-    fig.suptitle(title, fontsize=11, fontfamily="monospace", y=title_y)
-    fig.text(0.5, loc_y, info_line, fontsize=8.5, fontfamily="monospace",
-             color="#5b6675", ha="center")
 
-    parts = ["generator %s" % snap.get("generator", "scogf")]
-    if hidden:
-        parts.append("showing %d of %d contributing stations (--max-stations)"
-                     % (n, len(used_all)))
+    skip_line = None
     if skipped:
         # Summarise by reason rather than one entry per station: a dense event
         # can have hundreds of associated-but-unused stations.
@@ -237,10 +226,27 @@ def build_figure(snap, context, sort, max_stations):
         by_reason = ", ".join(
             "%s x%d" % (reason, c) for reason, c in counts.most_common()
         )
-        parts.append("%d skipped: %s" % (len(skipped), by_reason))
+        skip_line = "%d not contributing: %s" % (len(skipped), by_reason)
+
+    # Stacked header lines above the axes, spaced by a fixed number of inches
+    # (converted to a figure fraction) so the gaps stay legible regardless of
+    # the station count / figure height.
+    fig.suptitle(title, fontsize=11, fontfamily="monospace", y=1 - 0.25 / fig_h)
+    fig.text(0.5, 1 - 0.55 / fig_h, info_line, fontsize=8.5, fontfamily="monospace",
+             color="#5b6675", ha="center")
+    header_in = 0.85
+    if skip_line:
+        fig.text(0.5, 1 - 0.82 / fig_h, skip_line, fontsize=7.5,
+                 fontfamily="monospace", color="#b25a12", ha="center", wrap=True)
+        header_in = 1.12
+
+    parts = ["generator %s" % snap.get("generator", "scogf")]
+    if hidden:
+        parts.append("showing %d of %d contributing stations (--max-stations)"
+                     % (n, len(used_all)))
     fig.text(0.01, 0.005, "    ".join(parts), fontsize=7, color="#5b6675")
 
-    fig.tight_layout(rect=(0, 0.02, 1, top_rect))
+    fig.tight_layout(rect=(0, 0.02, 1, 1 - header_in / fig_h))
     return fig
 
 

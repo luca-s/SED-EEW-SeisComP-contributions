@@ -237,20 +237,25 @@ window comes out shorter than that is dropped from the OGF (skip reason
 *correlation window too short*). ``--context`` sets how many seconds of observed
 envelope are shown after the window; the envelope before ``t0`` is always shown.
 
-The figure title carries the origin publicID, the best-fitting magnitude type
-and value, and the origin's latitude, longitude and depth. A second line
-underneath gives the overall OGF, the station search radius (cutoff distance)
-that applied for the best-fitting magnitude value (see
-:confval:`distancePerMagnitude`), the contributing-station count (out of the
-associated stations, even when ``--max-stations`` limits how many are drawn) and
-the ground-motion region whose polygon contains the origin (``—`` if the origin
-is outside every region, in which case no PGV is available and stations are
-skipped).
-The footer summarises the stations that were associated but did not contribute,
-counted by reason (no soil class, no prediction, outside the cutoff distance for
-that magnitude, empty buffer, no PGV, no predicted P arrival, predicted P not
-yet arrived, correlation window too short, non-finite fit), and notes when
-contributing stations were hidden by ``--max-stations``.
+Three header lines sit above the axes:
+
+#. the origin publicID, the best-fitting magnitude type and value, and the
+   origin's latitude, longitude and depth;
+#. the overall OGF, the station search radius (cutoff distance) that applied for
+   the best-fitting magnitude value (see :confval:`distancePerMagnitude`), the
+   contributing-station count (out of the associated stations, even when
+   ``--max-stations`` limits how many are drawn), the ground-motion region whose
+   polygon contains the origin (``—`` if the origin is outside every region, in
+   which case no PGV is available and stations are skipped) and the common
+   correlation-window start ``t0``;
+#. the stations that were associated but did not contribute, counted by reason
+   (no soil class, no prediction, outside the cutoff distance for that
+   magnitude, empty buffer, no PGV, no predicted P arrival, predicted P not yet
+   arrived, correlation window too short, non-finite fit) — omitted when every
+   associated station contributed.
+
+The footer carries the generator name and notes when contributing stations were
+hidden by ``--max-stations``.
 
 
 Launching from scolv
