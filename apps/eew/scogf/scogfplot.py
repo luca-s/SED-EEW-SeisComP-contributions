@@ -208,13 +208,13 @@ def build_figure(snap, context, sort, max_stations):
     )
     info_line = (
         "OGF %.1f    station cutoff distance %.0f km    "
-        "%d/%d stations used    zone %s"
+        "%d/%d stations used    region %s"
     ) % (
         snap.get("ogf", float("nan")),
         snap.get("cutoffDistanceKm", float("nan")),
         len(used_all),
         len(stations),
-        org.get("zone") or "—",
+        org.get("region") or "—",
     )
     # Title and info line are two short lines above the axes; space them by
     # a fixed number of inches (converted to a figure fraction) so the gap

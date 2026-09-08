@@ -118,10 +118,10 @@ class App : public Seiscomp::Client::Application {
 		void process(Seiscomp::DataModel::Origin *org, Seiscomp::IO::RecordStream *rs);
 		void process(Seiscomp::DataModel::Origin *org, Evaluation &eval);
 		double compute(Seiscomp::DataModel::Origin *org,
-		               const Seiscomp::DataModel::Magnitude *mag, const std::string &zone,
+		               const Seiscomp::DataModel::Magnitude *mag, const std::string &region,
 		               int *stationCount = nullptr,
 		               std::vector<StationEval> *detail = nullptr);
-		double compute(Seiscomp::DataModel::Origin *org, double mag, const std::string &zone,
+		double compute(Seiscomp::DataModel::Origin *org, double mag, const std::string &region,
 		               int *stationCount = nullptr,
 		               std::vector<StationEval> *detail = nullptr);
 
@@ -130,7 +130,7 @@ class App : public Seiscomp::Client::Application {
 		double commonWindowStartSec(Seiscomp::DataModel::Origin *org) const;
 
 		void writeDebugSnapshot(Seiscomp::DataModel::Origin *org, const Evaluation &eval,
-		                        const std::string &zone, const std::string &magID,
+		                        const std::string &region, const std::string &magID,
 		                        const std::string &magType, double magValue,
 		                        const std::vector<StationEval> &detail);
 

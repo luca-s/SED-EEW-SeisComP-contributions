@@ -41,7 +41,7 @@ struct Evaluation {
 	std::string          bestMagnitude; //!< The magnitude which caused the highest fit
 	bool                 dirty{false}; //!< Dirty flag, e.g. association has changed
 	Seiscomp::Core::Time eol; //!< Maximum time to live => end of lifetime
-	OPT(std::string)     zone; //!< GMM zone containing the origin, resolved once (empty string: outside every zone)
+	OPT(std::string)     region; //!< ground-motion region containing the origin, resolved once (empty string: outside every region)
 };
 
 

@@ -75,8 +75,8 @@
 				<description>
 				Directory holding the pre-computed prediction archive: the predicted
 				envelope shapes per soil class, magnitude and hypocentral distance
-				bin (envelopes/), the GMPE PGV table (GMM.csv) with its zone polygons
-				(GMMpolygon.bna), and the per-station soil class and site
+				bin (envelopes/), the per-region GMM PGV table (GMM.csv) with its
+				region polygons (GMMpolygon.bna), and the per-station soil class and site
 				amplification factor (station-config.csv). The predicted envelopes
 				follow Cua (2005), rescaled for Switzerland with the Cauzzi et al.
 				(2015) ground-motion model.

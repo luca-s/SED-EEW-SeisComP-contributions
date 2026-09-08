@@ -18,14 +18,14 @@ For each origin *scogf*
 #. once a station's predicted P arrival is covered by its buffered data, scores
    it by combining a shape term (the correlation between the observed and
    predicted envelope) and an amplitude term (the observed peak against the
-   predicted peak, i.e. the GMPE PGV scaled by the station amplification), then
+   predicted peak, i.e. the GMM PGV scaled by the station amplification), then
    averages the per-station scores into the overall OGF (see `Method`_).
 
 Optionally an envelope magnitude ``Menv`` is derived as the magnitude whose
 predicted envelopes best fit the observations, see
 :confval:`envelopeMagnitude.enable`.
 
-The predicted envelopes, GMPE PGV coefficients and per-station soil/amplification
+The predicted envelopes, GMM PGV coefficients and per-station soil/amplification
 bindings are read from :confval:`predictionArchivePath`.
 
 
@@ -57,8 +57,8 @@ these relations itself; it reads a pre-computed archive
 * the predicted envelope shape per soil class, magnitude and distance bin
   (``envelopes/<soil>/<mag>/<dist>/V_H.npy``), nearest-neighbour matched to the
   origin magnitude and the station **hypocentral** distance;
-* the GMPE peak ground velocity (PGV) per zone, magnitude and (hypocentral)
-  distance (``GMM.csv`` with the zone polygons in ``GMMpolygon.bna``);
+* the GMM peak ground velocity (PGV) per region, magnitude and (hypocentral)
+  distance (``GMM.csv`` with the region polygons in ``GMMpolygon.bna``);
 * the per-station soil class and site amplification factor
   (``station-config.csv``). Stations missing from that file fall back to
   :confval:`sensorLocations.defaultSoilClass` and an amplification of 1.
@@ -212,7 +212,7 @@ station block uses a common x-axis of seconds since the origin time and shows:
 * **predicted** — the envelope predicted for this station, in its own units on a
   secondary axis (dashed grey line). Only its shape is compared with the observed
   envelope; the amplitude side of the SGF is a separate check of the observed
-  peak against the scaled predicted peak (GMPE PGV times station amplification)
+  peak against the scaled predicted peak (GMM PGV times station amplification)
   and is not drawn;
 * the **correlation window** used for that station's SGF, drawn as a shaded
   band, and the **P** and **S** travel times as dotted vertical lines.
@@ -243,8 +243,9 @@ underneath gives the overall OGF, the station search radius (cutoff distance)
 that applied for the best-fitting magnitude value (see
 :confval:`distancePerMagnitude`), the contributing-station count (out of the
 associated stations, even when ``--max-stations`` limits how many are drawn) and
-the GMM zone whose polygon contains the origin (``—`` if the origin is outside
-every zone, in which case no PGV is available and stations are skipped).
+the ground-motion region whose polygon contains the origin (``—`` if the origin
+is outside every region, in which case no PGV is available and stations are
+skipped).
 The footer summarises the stations that were associated but did not contribute,
 counted by reason (no soil class, no prediction, outside the cutoff distance for
 that magnitude, empty buffer, no PGV, no predicted P arrival, predicted P not

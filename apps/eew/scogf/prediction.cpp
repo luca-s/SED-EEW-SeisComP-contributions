@@ -67,10 +67,10 @@ void Prediction::setSource(const std::string &source) {
 	fs::path p(source);
 
 	_soilClasses.clear();
-	_zoneNames.clear();
-	_zones.clear();
+	_regionNames.clear();
+	_regions.clear();
 	_bindings.clear();
-	_gmm.clear();
+	_regionPgv.clear();
 	_envlp.clear();
 
 	if ( !fs::exists(p) ) {
@@ -125,20 +125,20 @@ void Prediction::setSource(const std::string &source) {
 		}
 	}
 
-	auto cnt = _zones.readFile(p / "GMMpolygon.bna", nullptr);
+	auto cnt = _regions.readFile(p / "GMMpolygon.bna", nullptr);
 	if ( cnt < 0 ) {
-		throw runtime_error("GMMpolygon.bna: invalid zone file name");
+		throw runtime_error("GMMpolygon.bna: invalid region file name");
 	}
 
 	if ( !cnt ) {
-		throw runtime_error("GMMpolygon.bna: no zones read");
+		throw runtime_error("GMMpolygon.bna: no regions read");
 	}
 
-	for ( const auto &zone : _zones.features() ) {
-		_zoneNames.push_back(zone->name());
+	for ( const auto &region : _regions.features() ) {
+		_regionNames.push_back(region->name());
 	}
 
-	// Read and parse GMM data
+	// Read and parse the per-region PGV table
 	ifstream ifs;
 	ifs.open(p / "GMM.csv");
 	if ( !ifs ) {
@@ -169,9 +169,9 @@ void Prediction::setSource(const std::string &source) {
 		if ( first ) {
 			first = false;
 
-			if ( cols.size() != (_zoneNames.size() + 2) ) {
+			if ( cols.size() != (_regionNames.size() + 2) ) {
 				throw runtime_error(stringify("GMM.csv:%d: expected %d columns, got %d",
-				                              lineNumber, _zoneNames.size() + 2, cols.size()));
+				                              lineNumber, _regionNames.size() + 2, cols.size()));
 			}
 
 			for ( auto &col : cols ) {
@@ -187,11 +187,11 @@ void Prediction::setSource(const std::string &source) {
 			}
 
 			for ( size_t i = 2; i < header.size(); ++i ) {
-				if ( find(_zoneNames.begin(), _zoneNames.end(), header[i]) == _zoneNames.end() ) {
+				if ( find(_regionNames.begin(), _regionNames.end(), header[i]) == _regionNames.end() ) {
 					throw runtime_error(
 						stringify(
-							"GMM.csv: zone name header at column %d does not match the available zones: '%s' not in ['%s']",
-							2 + i, header[i], join(_zoneNames, "', '")
+							"GMM.csv: region name header at column %d does not match the available regions: '%s' not in ['%s']",
+							2 + i, header[i], join(_regionNames, "', '")
 						)
 					);
 				}
@@ -214,12 +214,12 @@ void Prediction::setSource(const std::string &source) {
 			}
 		}
 
-		for ( size_t i = 0; i < _zoneNames.size(); ++i ) {
-			_gmm[_zoneNames[i]][values[0]][values[1]] = values[2 +i];
+		for ( size_t i = 0; i < _regionNames.size(); ++i ) {
+			_regionPgv[_regionNames[i]][values[0]][values[1]] = values[2 +i];
 		}
 	}
 
-	// Done reading GMM.csv
+	// Done reading the per-region PGV table
 	ifs.close();
 
 	// Open station-config.csv
@@ -414,10 +414,10 @@ std::string Prediction::tracePath(const std::string &soilClass,
 
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-double Prediction::pgv(const std::string &zone, double mag, double dist) const {
-	auto it = _gmm.find(zone);
-	if ( it == _gmm.end() ) {
-		throw runtime_error(stringify("no GMM predictions for zone '%s'", zone));
+double Prediction::pgv(const std::string &region, double mag, double dist) const {
+	auto it = _regionPgv.find(region);
+	if ( it == _regionPgv.end() ) {
+		throw runtime_error(stringify("no PGV predictions for region '%s'", region));
 	}
 
 	const auto &magnitudes = it->second;
@@ -425,8 +425,8 @@ double Prediction::pgv(const std::string &zone, double mag, double dist) const {
 	if ( mit == magnitudes.end() ||
 	    (mit == magnitudes.begin() && mit->first > mag) ) {
 		// mag is smaller or greater than all keys
-		throw runtime_error(stringify("no pgv for zone '%s' at magnitude %f",
-		                              zone, mag));
+		throw runtime_error(stringify("no PGV for region '%s' at magnitude %f",
+		                              region, mag));
 	}
 	else if ( mit != magnitudes.begin() ) {
 		// find the closest mag between the greater and smaller neighbours
@@ -442,8 +442,8 @@ double Prediction::pgv(const std::string &zone, double mag, double dist) const {
 	if ( dit == distances.end()  ||
 	    (dit == distances.begin() && dit->first > dist) ) {
 		// dist is smaller or greater than all keys
-		throw runtime_error(stringify("no pgv for zone '%s' at distance %f (magnitude %f)",
-		                              zone, dist, mag));
+		throw runtime_error(stringify("no PGV for region '%s' at distance %f (magnitude %f)",
+		                              region, dist, mag));
 	}
 	else if ( dit != distances.begin() ) {
 		// find the closest distance between the greater and smaller neighbours
@@ -462,8 +462,8 @@ double Prediction::pgv(const std::string &zone, double mag, double dist) const {
 
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-std::string Prediction::zoneName(double lat, double lon) const {
-	for ( const auto &f : _zones.features() ) {
+std::string Prediction::regionName(double lat, double lon) const {
+	for ( const auto &f : _regions.features() ) {
 		if ( f->contains({ lat, lon }) ) {
 			return f->name();
 		}

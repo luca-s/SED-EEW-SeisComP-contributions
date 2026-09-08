@@ -319,7 +319,7 @@ bool App::init() {
 	_prediction.setDefaultSoilClass(_settings.sensorLocations.defaultSoilClass);
 
 	SEISCOMP_DEBUG("Available envelope soil classes: %s", Core::join(_prediction.soilClasses(), ", "));
-	SEISCOMP_DEBUG("Available gmpe zones: %s", Core::join(_prediction.zones(), ", "));
+	SEISCOMP_DEBUG("Available ground-motion regions: %s", Core::join(_prediction.regions(), ", "));
 
 	if ( !_settings.debug.dumpPath.empty() ) {
 		_settings.debug.dumpPath = Environment::Instance()->absolutePath(_settings.debug.dumpPath);
@@ -888,26 +888,28 @@ void App::process(Origin *org, Evaluation &eval) {
 	eval.bestMagnitude = {};
 	eval.gof = -1;
 
-	if ( !eval.zone ) {
-		string z;
+	// The predicted PGV, and hence the whole OGF, needs a ground-motion region
+	// for the origin's location. Resolve it once, then stop if there is none.
+	if ( !eval.region ) {
+		string r;
 		try {
-			z = _prediction.zoneName(org->latitude().value(),
-			                         org->longitude().value());
+			r = _prediction.regionName(org->latitude().value(),
+			                           org->longitude().value());
 		}
 		catch ( ... ) {}
-		if ( z.empty() ) {
-			SEISCOMP_WARNING("%s: origin is outside every GMM zone; no predicted "
-			                 "PGV, OGF not computed", org->publicID());
+		if ( r.empty() ) {
+			SEISCOMP_WARNING("%s: origin is outside every ground-motion region; "
+			                 "no predicted PGV, OGF not computed", org->publicID());
 		}
-		eval.zone = std::move(z);
+		eval.region = std::move(r);
 	}
 
-	if ( eval.zone->empty() ) {
+	if ( eval.region->empty() ) {
 		eval.dirty = false;
 		return;
 	}
 
-	const string &zone = *eval.zone;
+	const string &region = *eval.region;
 
 	// Debug snapshot: keep the per-station detail from the compute() call that
 	// wins the overall GOF (not the last one).
@@ -925,7 +927,7 @@ void App::process(Origin *org, Evaluation &eval) {
 		for ( double m = _settings.envelopeMagnitude.minimum;
 		      m < _settings.envelopeMagnitude.maximum;
 		      m += _settings.envelopeMagnitude.spacing ) {
-			auto gof = compute(org, m, zone, &stationCount,
+			auto gof = compute(org, m, region, &stationCount,
 			                   wantSnapshot ? &candDetail : nullptr);
 			if ( isfinite(gof) && stationCount >= _settings.minimumStations &&
 			     (!envMagGOF || (*envMagGOF < gof)) ) {
@@ -1003,7 +1005,7 @@ void App::process(Origin *org, Evaluation &eval) {
 		}
 
 		int stationCount;
-		auto gof = compute(org, mag, zone, &stationCount,
+		auto gof = compute(org, mag, region, &stationCount,
 		                   wantSnapshot ? &candDetail : nullptr);
 		if ( isfinite(gof) && stationCount >= _settings.minimumStations &&
 		     gof >= eval.gof ) {
@@ -1078,7 +1080,7 @@ void App::process(Origin *org, Evaluation &eval) {
 	if ( wantSnapshot && eval.gof >= 0
 	  && any_of(snapDetail.begin(), snapDetail.end(),
 	            [](const StationEval &s) { return s.used; }) ) {
-		writeDebugSnapshot(org, eval, zone, snapMagID, snapMagType, snapMagValue, snapDetail);
+		writeDebugSnapshot(org, eval, region, snapMagID, snapMagType, snapMagValue, snapDetail);
 	}
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
@@ -1088,7 +1090,7 @@ void App::process(Origin *org, Evaluation &eval) {
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 void App::writeDebugSnapshot(Origin *org, const Evaluation &eval,
-                             const string &zone, const string &magID,
+                             const string &region, const string &magID,
                              const string &magType, double magValue,
                              const vector<StationEval> &detail) {
 	OriginSnapshot snap;
@@ -1098,7 +1100,7 @@ void App::writeDebugSnapshot(Origin *org, const Evaluation &eval,
 	try { snap.latitude = org->latitude().value(); } catch ( ... ) {}
 	try { snap.longitude = org->longitude().value(); } catch ( ... ) {}
 	try { snap.depth = org->depth().value(); } catch ( ... ) {}
-	snap.zone = zone;
+	snap.region = region;
 
 	snap.ogf = eval.gof;
 	snap.minimumStations = _settings.minimumStations;
@@ -1177,10 +1179,10 @@ double App::commonWindowStartSec(Origin *org) const {
 
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-double App::compute(Origin *org, const Magnitude *mag, const string &zone,
+double App::compute(Origin *org, const Magnitude *mag, const string &region,
                     int *stationCount, vector<StationEval> *detail) {
 	SEISCOMP_DEBUG("Compute %s %s %s", org->publicID(), mag->publicID(), mag->type());
-	return compute(org, mag->magnitude().value(), zone, stationCount, detail);
+	return compute(org, mag->magnitude().value(), region, stationCount, detail);
 }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
@@ -1188,7 +1190,7 @@ double App::compute(Origin *org, const Magnitude *mag, const string &zone,
 
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-double App::compute(Origin *org, double mag, const string &zone, int *stationCount,
+double App::compute(Origin *org, double mag, const string &region, int *stationCount,
                     vector<StationEval> *detail) {
 	vector<double> gofs;
 
@@ -1280,7 +1282,7 @@ double App::compute(Origin *org, double mag, const string &zone, int *stationCou
 
 			double pgv = 1.0;
 			try {
-				pgv = _prediction.pgv(zone, mag, assoc->hypoDist);
+				pgv = _prediction.pgv(region, mag, assoc->hypoDist);
 			}
 			catch ( exception &e ) {
 				SEISCOMP_WARNING("No pgv: %s", e.what());
@@ -1297,7 +1299,7 @@ double App::compute(Origin *org, double mag, const string &zone, int *stationCou
 			double amplification = _prediction.amplification(sid);
 
 			// Physical scale of the predicted envelope: normalise it to unit peak,
-			// bring it to the GMPE PGV for this magnitude and distance, then apply
+			// bring it to the GMM PGV for this magnitude and distance, then apply
 			// the site amplification. Only the amplitude-fit term below uses this;
 			// the shape correlation is invariant to it.
 			double scale = pgv / predMax * amplification;
@@ -1363,7 +1365,7 @@ double App::compute(Origin *org, double mag, const string &zone, int *stationCou
 				continue;
 			}
 
-			// Peak amplitudes over the window: observed vs. GMPE-scaled predicted.
+			// Peak amplitudes over the window: observed vs. GMM-scaled predicted.
 			// A gap inside the window can leave fewer observed samples than
 			// count; nObs is what is actually available and is what the
 			// correlation below is computed over.
@@ -1386,7 +1388,7 @@ double App::compute(Origin *org, double mag, const string &zone, int *stationCou
 
 			// Pearson correlation of the two shapes. Each series is normalised by
 			// its own window peak: the coefficient does not depend on that (nor on
-			// the GMPE scaling), the normalisation only keeps the sums well
+			// the GMM scaling), the normalisation only keeps the sums well
 			// conditioned.
 			double normObs = maxObs > 0.0 ? 1.0 / maxObs : 1.0;
 			double normPred = maxPredWinRaw > 0.0 ? 1.0 / maxPredWinRaw : 1.0;

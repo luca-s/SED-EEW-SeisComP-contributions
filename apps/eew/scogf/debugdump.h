@@ -83,7 +83,7 @@ struct OriginSnapshot {
 	double      latitude{0};
 	double      longitude{0};
 	double      depth{0};
-	std::string zone;                  //!< GMM zone whose polygon contains the origin
+	std::string region;                //!< ground-motion region whose polygon contains the origin
 
 	double      ogf{-1};               //!< final overall goodness of fit
 	size_t      minimumStations{0};

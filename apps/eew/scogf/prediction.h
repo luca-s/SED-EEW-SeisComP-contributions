@@ -40,8 +40,8 @@ namespace EEW::OGF {
 
 
 /**
- * @brief The Prediction class returns predicted GMPE PGV values and predicted
- *        envelopes.
+ * @brief The Prediction class returns predicted PGV values (from the Swiss
+ *        ground-motion model, per region) and predicted envelopes.
  */
 class Prediction {
 	// ----------------------------------------------------------------------
@@ -61,8 +61,9 @@ class Prediction {
 		/**
 		 * @brief Sets the source of the archive and reads its metadata.
 		 * This methods throws exceptions in case of an error.
-		 * @param source The path to the archive containing the three folders:
-		 *               amplifications, envelope and gmpe
+		 * @param source Path to the archive: the envelopes/ directory, the
+		 *               per-region PGV table GMM.csv with its region polygons
+		 *               GMMpolygon.bna, and the per-station station-config.csv.
 		 */
 		void setSource(const std::string &source);
 
@@ -76,10 +77,10 @@ class Prediction {
 		void setDefaultSoilClass(const std::string &defaultSoilClass);
 
 		/**
-		 * @brief Returns the available gmpe zones.
-		 * @return A list of zone names.
+		 * @brief Returns the available ground-motion region names.
+		 * @return A list of region names.
 		 */
-		const std::vector<std::string> &zones() const;
+		const std::vector<std::string> &regions() const;
 
 		/**
 		 * @brief Returns the available soil classes of the predicted envelopes.
@@ -105,9 +106,9 @@ class Prediction {
 		Seiscomp::Array *trace(const std::string &soilClass, double mag, double dist);
 
 		/**
-		 * @brief Resolves the soil class that get() would use for a streamID.
-		 * Returns the binding's soil class, or the default soil class if there is
-		 * no binding or the binding has an empty soil class. May be empty.
+		 * @brief Resolves the soil class for a streamID: the binding's soil
+		 * class, or the default soil class if there is no binding or the binding
+		 * has an empty soil class. May be empty.
 		 */
 		std::string resolvedSoilClass(const std::string &streamID) const;
 
@@ -119,29 +120,29 @@ class Prediction {
 		std::string tracePath(const std::string &soilClass, double mag, double dist) const;
 
 		/**
-		 * @brief Returns the name of the GMM zone whose polygon contains the
-		 * given coordinate, or an empty string if none does. Pass the result to
-		 * pgv().
+		 * @brief Returns the name of the ground-motion region whose polygon
+		 * contains the given coordinate, or an empty string if none does. Pass
+		 * the result to pgv().
 		 */
-		std::string zoneName(double lat, double lon) const;
+		std::string regionName(double lat, double lon) const;
 
 		/**
-		 * @brief Returns the predicted PGV for a GMM zone (see zoneName()) at the
+		 * @brief Returns the predicted PGV for a region (see regionName()) at the
 		 * nearest magnitude and distance bin.
-		 * This method throws an exception if the zone is unknown or has no bin
+		 * This method throws an exception if the region is unknown or has no bin
 		 * covering the given magnitude and distance.
-		 * @param zone The GMM zone name.
+		 * @param region The region name.
 		 * @param mag The magnitude.
 		 * @param dist The hypocentral distance in kilometers.
 		 * @return The PGV value.
 		 */
-		double pgv(const std::string &zone, double mag, double dist) const;
+		double pgv(const std::string &region, double mag, double dist) const;
 
 		/**
 		 * @brief Returns the site amplification factor bound to a sensor
 		 * location in the archive's station-config.csv, or 1.0 if the stream is
 		 * not listed. The predicted envelope for a station is scaled by the
-		 * GMPE PGV times this factor.
+		 * GMM PGV times this factor.
 		 * @param streamID The NET.STA.LOC stream ID.
 		 */
 		double amplification(const std::string &streamID) const;
@@ -164,9 +165,9 @@ class Prediction {
 	//  Private members
 	// ----------------------------------------------------------------------
 	private:
-		using GMMDistanceMap = std::map<double, double>;
-		using GMMMagnitudeMap = std::map<double, GMMDistanceMap>;
-		using GMM = std::map<std::string, GMMMagnitudeMap>;
+		using PgvDistanceMap = std::map<double, double>;
+		using PgvMagnitudeMap = std::map<double, PgvDistanceMap>;
+		using RegionPgvTable = std::map<std::string, PgvMagnitudeMap>;
 		using EnvDistanceMap = std::map<double, std::string>;
 		using EnvMagnitudeMap = std::map<double, EnvDistanceMap>;
 		using Envelope = std::map<std::string, EnvMagnitudeMap>;
@@ -179,17 +180,17 @@ class Prediction {
 
 		std::filesystem::path        _envelopePath;
 		std::string                  _defaultSoilClass;
-		std::vector<std::string>     _zoneNames;
+		std::vector<std::string>     _regionNames;
 		std::vector<std::string>     _soilClasses;
-		Seiscomp::Geo::GeoFeatureSet _zones;
-		GMM                          _gmm;
+		Seiscomp::Geo::GeoFeatureSet _regions;
+		RegionPgvTable               _regionPgv;
 		Envelope                     _envlp;
 		ChannelBindings              _bindings;
 };
 
 
-inline const std::vector<std::string> &Prediction::zones() const {
-	return _zoneNames;
+inline const std::vector<std::string> &Prediction::regions() const {
+	return _regionNames;
 }
 
 inline const std::vector<std::string> &Prediction::soilClasses() const {

@@ -56,7 +56,7 @@ OriginSnapshot sampleSnapshot() {
 	snap.latitude = 46.21;
 	snap.longitude = 7.34;
 	snap.depth = 8.0;
-	snap.zone = "Foreland";
+	snap.region = "Foreland";
 	snap.ogf = 71.3;
 	snap.minimumStations = 1;
 	snap.cutoffDistanceKm = 55.6;
@@ -150,7 +150,7 @@ BOOST_AUTO_TEST_CASE(json_content) {
 	BOOST_CHECK(js.find("\"ogf\": 71.3") != std::string::npos);
 	BOOST_CHECK(js.find("\"cutoffDistanceKm\": 55.6") != std::string::npos);
 	BOOST_CHECK(js.find("\"t0Sec\": 1.1") != std::string::npos);
-	BOOST_CHECK(js.find("\"zone\": \"Foreland\"") != std::string::npos);
+	BOOST_CHECK(js.find("\"region\": \"Foreland\"") != std::string::npos);
 	BOOST_CHECK(js.find("\"type\": \"MVS\"") != std::string::npos);
 	BOOST_CHECK(js.find("\"sid\": \"CH.SENIN.\"") != std::string::npos);
 	BOOST_CHECK(js.find("\"hypoDistanceKm\": 14.8") != std::string::npos);
