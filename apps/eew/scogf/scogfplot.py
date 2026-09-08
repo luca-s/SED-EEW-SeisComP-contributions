@@ -205,11 +205,15 @@ def build_figure(snap, context, sort, max_stations):
         len(used_all),
         len(stations),
     )
-    loc_line = "lat %.3f°   lon %.3f°   depth %.1f km   station cutoff distance %.0f km" % (
+    loc_line = (
+        "lat %.3f°   lon %.3f°   depth %.1f km   "
+        "station cutoff distance %.0f km   corr. window t0 %.0f s"
+    ) % (
         org.get("latitude", float("nan")),
         org.get("longitude", float("nan")),
         org.get("depth", float("nan")),
         snap.get("cutoffDistanceKm", float("nan")),
+        snap.get("t0Sec", float("nan")),
     )
     # Title and location line are two short lines above the axes; space them by
     # a fixed number of inches (converted to a figure fraction) so the gap

@@ -125,6 +125,8 @@ class App : public Seiscomp::Client::Application {
 
 		double cutoffDistanceKm(double mag) const;
 
+		double commonWindowStartSec(Seiscomp::DataModel::Origin *org) const;
+
 		void writeDebugSnapshot(Seiscomp::DataModel::Origin *org, const Evaluation &eval,
 		                        const std::string &magID, const std::string &magType,
 		                        double magValue, const std::vector<StationEval> &detail);
@@ -256,7 +258,7 @@ class App : public Seiscomp::Client::Application {
 			OPT(double)              distancePerMagnitude;
 			double                   maximumDistance{5};
 			size_t                   minimumStations{1};
-			double                   preArrivalTimeWindow{0};
+			double                   preArrivalTimeWindow{2};
 			double                   postArrivalTimeShare{1.5};
 			double                   minimumCorrelationWindow{0};
 			std::string              predictionArchivePath{"@DATADIR@/scogf"};

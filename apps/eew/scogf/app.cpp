@@ -1080,6 +1080,7 @@ void App::writeDebugSnapshot(Origin *org, const Evaluation &eval,
 	snap.ogf = eval.gof;
 	snap.minimumStations = _settings.minimumStations;
 	snap.cutoffDistanceKm = cutoffDistanceKm(magValue);
+	snap.t0Sec = commonWindowStartSec(org);
 	snap.magID = magID;
 	snap.magType = magType;
 	snap.magValue = magValue;
@@ -1130,6 +1131,29 @@ double App::cutoffDistanceKm(double mag) const {
 
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+double App::commonWindowStartSec(Origin *org) const {
+	// Closest station = smallest predicted P travel time over all associations.
+	double closestTtP = -1;
+	for ( const auto &[assocOrg, assocSid] : _associationTable.sensors(org) ) {
+		const auto *assoc = _associationTable.assoc(assocOrg, assocSid);
+		if ( assoc && (assoc->ttP >= 0)
+		  && ((closestTtP < 0) || (assoc->ttP < closestTtP)) ) {
+			closestTtP = assoc->ttP;
+		}
+	}
+
+	if ( closestTtP < 0 ) {
+		return 0.0;
+	}
+
+	return max(0.0, closestTtP - _settings.preArrivalTimeWindow);
+}
+// <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+
+
+// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 double App::compute(Origin *org, const Magnitude *mag, int *stationCount,
                     vector<StationEval> *detail) {
 	SEISCOMP_DEBUG("Compute %s %s %s", org->publicID(), mag->publicID(), mag->type());
@@ -1165,6 +1189,9 @@ double App::compute(Origin *org, double mag, int *stationCount,
 	};
 
 	const double cutoffDistKm = cutoffDistanceKm(mag);
+
+	// Common correlation-window start time for every station
+	const double windowStartSec = commonWindowStartSec(org);
 
 	// Do not check the eval.dirty flag as this has been done already
 	for ( const auto &[org, sid] : _associationTable.sensors(org) ) {
@@ -1255,8 +1282,8 @@ double App::compute(Origin *org, double mag, int *stationCount,
 			// Correlation window [idx0, idx1) in whole seconds after the origin
 			// time: the intersection of a, b, c
 
-			// Desired time window (a)
-			double startTimeA = assoc->ttP - _settings.preArrivalTimeWindow;
+			// Desired time window (a): a common start time shared by every station
+			double startTimeA = windowStartSec;
 			double endTimeA = assoc->ttS * _settings.postArrivalTimeShare;
 
 			// Time window of available predicted envelope (b)

@@ -87,6 +87,7 @@ struct OriginSnapshot {
 	double      ogf{-1};               //!< final overall goodness of fit
 	size_t      minimumStations{0};
 	double      cutoffDistanceKm{-1};  //!< station search radius for magValue
+	double      t0Sec{-1};             //!< common correlation-window start, s after origin time
 
 	std::string magID;                 //!< publicID of the best magnitude
 	std::string magType;

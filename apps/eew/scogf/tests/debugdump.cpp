@@ -59,6 +59,7 @@ OriginSnapshot sampleSnapshot() {
 	snap.ogf = 71.3;
 	snap.minimumStations = 1;
 	snap.cutoffDistanceKm = 55.6;
+	snap.t0Sec = 1.1;
 	snap.magID = "Magnitude/20260902110405.1.7";
 	snap.magType = "MVS";
 	snap.magValue = 4.18;
@@ -147,6 +148,7 @@ BOOST_AUTO_TEST_CASE(json_content) {
 	BOOST_CHECK(js.find("\"schemaVersion\": 1") != std::string::npos);
 	BOOST_CHECK(js.find("\"ogf\": 71.3") != std::string::npos);
 	BOOST_CHECK(js.find("\"cutoffDistanceKm\": 55.6") != std::string::npos);
+	BOOST_CHECK(js.find("\"t0Sec\": 1.1") != std::string::npos);
 	BOOST_CHECK(js.find("\"type\": \"MVS\"") != std::string::npos);
 	BOOST_CHECK(js.find("\"sid\": \"CH.SENIN.\"") != std::string::npos);
 	BOOST_CHECK(js.find("\"hypoDistanceKm\": 14.8") != std::string::npos);

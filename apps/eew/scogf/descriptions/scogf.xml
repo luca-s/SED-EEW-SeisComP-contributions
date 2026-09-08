@@ -43,10 +43,11 @@
 				The update interval in seconds to check for OGF updates.
 				</description>
 			</parameter>
-			<parameter name="preArrivalTimeWindow" type="int" default="0" unit="s">
+			<parameter name="preArrivalTimeWindow" type="double" default="2" unit="s">
 				<description>
-				An offset in seconds that will be substracted from the arrival time to
-				compute the desired envelope time window.
+				Buffer subtracted from the closest station's predicted P arrival to
+				get the common correlation-window start time t0 (shared by every
+				station). t0 is clamped to the origin time.
 				</description>
 			</parameter>
 			<parameter name="postArrivalTimeShare" type="double" default="1.5">
@@ -63,9 +64,9 @@
 				<description>
 				Minimum length of the correlation window for a station to contribute
 				its station goodness of fit (SGF) to the OGF. The window runs from the
-				P arrival minus preArrivalTimeWindow to the earliest of
+				common start time t0 (see preArrivalTimeWindow) to the earliest of
 				postArrivalTimeShare * S travel time, the predicted envelope length and
-				the end of the buffered envelope, so close stations and origins that are only seconds
+				the end of the buffered envelope, so origins that are only seconds
 				old can produce windows too short for a meaningful fit. 0 (default)
 				disables the check.
 				</description>

@@ -135,6 +135,7 @@ string toJSON(const OriginSnapshot &snap) {
 	   << "  \"ogf\": " << num(snap.ogf) << ",\n"
 	   << "  \"minimumStations\": " << snap.minimumStations << ",\n"
 	   << "  \"cutoffDistanceKm\": " << num(snap.cutoffDistanceKm) << ",\n"
+	   << "  \"t0Sec\": " << num(snap.t0Sec) << ",\n"
 	   << "  \"bestMagnitude\": {"
 	   << "\"publicID\": " << jsonString(snap.magID)
 	   << ", \"type\": " << jsonString(snap.magType)

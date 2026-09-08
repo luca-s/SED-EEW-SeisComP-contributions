@@ -93,10 +93,13 @@ term, following equations 1–3 of Jozinović et al. (2024):
 The station score is ``SGF = sqrt(A * C)``. The paper's per-station value is
 ``G = 100 * SGF``.
 
-The correlation window is described under `Reading the plot`_: it starts at the
-station's predicted P arrival (minus :confval:`preArrivalTimeWindow`) and ends
-at the earliest of :confval:`postArrivalTimeShare` times the S travel time, the
-predicted-envelope length and the end of the buffered data.
+The correlation window is described under `Reading the plot`_. Following
+Jozinović et al. (2024), every station shares one start time ``t0`` — the
+predicted P arrival at the closest associated station minus
+:confval:`preArrivalTimeWindow`, clamped to the origin time. The window ends,
+per station, at the earliest of :confval:`postArrivalTimeShare` times that
+station's S travel time, the predicted-envelope length and the end of the
+buffered data.
 
 Origin goodness of fit (OGF)
 ----------------------------
@@ -212,25 +215,26 @@ window, and ``SGF = sqrt(Corr * AmpFit)`` (the paper's per-station ``G`` is
 ``100 * SGF``; see `Method`_). The resolved predicted-envelope file path is
 printed dim underneath it.
 
-The correlation window normally starts at the P arrival time truncated to the
-second, and ends at the earliest of ``ttS * postArrivalTimeShare``, the
-predicted envelope length and the end of the buffered data. When
-:confval:`minimumCorrelationWindow` is set, a station whose window comes out
-shorter than that is dropped from the OGF (skip reason *correlation window too
-short*). ``--context`` sets how many seconds of observed envelope are shown
-after the window; envelope before the window (for example between origin time
-and P) is always shown.
+Every station's window starts at the same ``t0`` — the closest station's
+predicted P arrival minus :confval:`preArrivalTimeWindow`, clamped to the origin
+time and truncated to the second — so on a nearer station the shaded band opens
+well before that station's own P. It ends at the earliest of
+``ttS * postArrivalTimeShare``, the predicted envelope length and the end of the
+buffered data. When :confval:`minimumCorrelationWindow` is set, a station whose
+window comes out shorter than that is dropped from the OGF (skip reason
+*correlation window too short*). ``--context`` sets how many seconds of observed
+envelope are shown after the window; the envelope before ``t0`` is always shown.
 
 The figure title carries the origin publicID, the best-fitting magnitude type
 and value, the overall OGF and the contributing-station count (all of them, even
 when ``--max-stations`` limits how many are drawn). A second line underneath
-gives the origin's latitude, longitude, depth and the station search radius
+gives the origin's latitude, longitude, depth, the station search radius
 (cutoff distance) that applied for the best-fitting magnitude value (see
-:confval:`distancePerMagnitude`). The footer summarises the stations that were
-associated but did not contribute, counted by reason (no soil class, no
-prediction, outside the cutoff distance for that magnitude, empty buffer, no
-PGV, correlation window too short, non-finite fit), and notes when
-contributing stations were hidden by ``--max-stations``.
+:confval:`distancePerMagnitude`) and the common correlation-window start ``t0``.
+The footer summarises the stations that were associated but did not contribute,
+counted by reason (no soil class, no prediction, outside the cutoff distance for
+that magnitude, empty buffer, no PGV, correlation window too short, non-finite
+fit), and notes when contributing stations were hidden by ``--max-stations``.
 
 
 Launching from scolv
