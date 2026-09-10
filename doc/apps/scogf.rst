@@ -1,8 +1,15 @@
+*scogf* is a real-time implementation of the goodness-of-fit measure of
+:ref:`Jozinović et al. (2024) <scogf-references>`. A source estimate
+(hypocentre and magnitude) is judged by how well the ground motions it
+*predicts* match those actually *observed* in real time, rather than by
+origin-quality proxies such as pick count, azimuthal gap or RMS. The measure is
+absolute (bounded between 0 and 100) and independent of the algorithm that
+produced the origin, so OGF values can be compared across pipelines and against
+a fixed alerting threshold.
+
 *scogf* computes, for each incoming origin, an Origin Goodness of Fit (OGF): a
 measure of how well the observed real-time ground-motion envelopes match the
-envelopes predicted for the origin's location, depth and magnitude. It is a
-real-time implementation of the goodness-of-fit measure of
-:ref:`Jozinović et al. (2024) <scogf-references>`. The result is
+envelopes predicted for the origin's location, depth and magnitude.   The result is
 written to the origin as a comment (``eew.ogf.value``) together with the publicID
 of the best-fitting magnitude (``eew.ogf.mag``), for :ref:`scevent` to use when
 scoring or selecting the preferred origin.
@@ -27,21 +34,6 @@ predicted envelopes best fit the observations, see
 
 The predicted envelopes, GMM PGV coefficients and per-station soil/amplification
 bindings are read from :confval:`predictionArchivePath`.
-
-
-Method
-======
-
-*scogf* implements the origin goodness-of-fit proposed by
-:ref:`Jozinović et al. (2024) <scogf-references>`. A source estimate
-(hypocentre and magnitude) is judged by how well the ground motions it
-*predicts* match those actually *observed* in real time, rather than by
-origin-quality proxies such as pick count, azimuthal gap or RMS. The measure is
-absolute (bounded between 0 and 100) and independent of the algorithm that
-produced the origin, so OGF values can be compared across pipelines and against
-a fixed alerting threshold. Jozinović et al. (2024) suggest an OGF around 55 as
-the boundary between an acceptable and a poor solution; the threshold itself is
-applied downstream by :ref:`scevent`.
 
 Predicted envelopes
 -------------------
