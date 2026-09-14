@@ -337,8 +337,11 @@ bool App::init() {
 	_cache.setTimeSpan(_settings.cacheSize);
 	_cache.setPopCallback([this](PublicObject *obj) {
 		if ( Origin::Cast(obj) ) {
+			Origin* org = static_cast<Origin*>(obj);
+			SEISCOMP_DEBUG("Origin %s exiting the internal cache. Stop processing it",
+			               org->publicID());
 			// Remove all station -> origin associations
-			_associationTable.remove(static_cast<Origin*>(obj));
+			_associationTable.remove(org);
 		}
 	});
 
@@ -490,7 +493,10 @@ void App::handleTimeout() {
 	}
 
 	for ( auto org : toDelete ) {
-		_cache.remove(org);
+		// Stop actively tracking this origin, but leave it in _cache so it keeps
+		// being updated by notifiers until it ages out of the cache's own time span
+		SEISCOMP_DEBUG("Remove origin %s from further processing", org->publicID());
+		_associationTable.remove(org);
 	}
 
 	if ( updatedCount > 0 || unchangedCount > 0 || toDelete.size() > 0 ) {
@@ -613,27 +619,40 @@ void App::handleMessage(Message *msg) {
 void App::addObject(const std::string &parentID, Object *obj) {
 	auto org = Origin::Cast(obj);
 	if ( org ) {
+		// _associationTable is keyed by raw Origin*, so org must be redirected
+		// to the single /cached instance here
 		auto tmp = _cache.get<Origin>(org->publicID());
-		if ( !tmp ) {
-			_cache.feed(org);
-		}
-		else {
-			org = tmp.get();
-		}
+		org = tmp.get();
 
 		addAssociations(org);
 	}
 
 	auto mag = Magnitude::Cast(obj);
 	if ( mag ) {
+		// A DB fallback hit means the origin is no longer registered/cached
+		// That copy was loaded from db without its magnitude children, so
+        // treat it the same as "parent origin not found"
 		auto org = _cache.get<Origin>(parentID);
+		if ( org && !_cache.cached() ) {
+			SEISCOMP_DEBUG("Origin (%s) out of cache", parentID);
+			org = nullptr;
+		}
 		if ( org ) {
 			auto eval = _associationTable.get(org.get());
-			if ( eval ) {
-				SEISCOMP_DEBUG("%s: set dirty because of new %s magnitude",
-				               org->publicID(), mag->type());
+			if ( !eval ) {
+				SEISCOMP_DEBUG("Received mag %s with unassociated parent origin %s",
+			               mag->publicID(), org->publicID());
+				addAssociations(org.get());
+			}
+			else {
+				SEISCOMP_DEBUG("Received mag %s: set parent origin dirty (%s)",
+				               mag->publicID(), org->publicID());
 				eval->dirty = true;
 			}
+		}
+		else {
+			SEISCOMP_DEBUG("Received mag %s: parent origin not found (%s). Drop mag.",
+			               mag->publicID(), parentID);
 		}
 	}
 }
