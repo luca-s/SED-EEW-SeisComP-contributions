@@ -117,7 +117,9 @@ def annotate(ax, s):
 
 
 def series_xy(block):
-    v = block.get("v", [])
+    # A null entry marks a second with no buffered sample: render it as a
+    # break in the line rather than silently joining across it.
+    v = [float("nan") if x is None else x for x in block.get("v", [])]
     t0 = block.get("t0", 0.0)
     return [t0 + i for i in range(len(v))], v
 

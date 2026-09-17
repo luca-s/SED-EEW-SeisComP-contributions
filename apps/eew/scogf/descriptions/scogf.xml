@@ -183,6 +183,25 @@
 					resolvable soil class does not contribute to the OGF.
 					</description>
 				</parameter>
+				<parameter name="instrumentPriority" type="list:string" default="H,L,N,G">
+					<description>
+					Preference order of instrument codes (the 2nd character of a
+					channel's 2-letter band+instrument code, e.g. "G" in "HG") used to
+					pick a single sensor per sensor location when more than one
+					streams combined-horizontal velocity envelopes for the same
+					NET.STA.LOC (e.g. a co-located accelerometer and broadband
+					seismometer sharing a location code). Earlier entries win, and a
+					higher-priority sensor takes over as soon as it starts streaming.
+					An instrument code not listed here is still usable, but only when
+					none of the listed ones are available. The default prefers
+					instruments whose native output is velocity (H, then the rare
+					low-gain seismometer code L) over ones that require integrating
+					acceleration to velocity (N, and the historical/local code G):
+					the former resolve small-amplitude motion far better and avoid
+					integration artifacts, at the cost of clipping during very
+					large-amplitude shaking.
+					</description>
+				</parameter>
 			</group>
 			<group name="debug">
 				<description>

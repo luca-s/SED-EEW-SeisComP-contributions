@@ -92,19 +92,27 @@ class App : public Seiscomp::Client::Application {
 				using circular_buffer<Envelope>::circular_buffer;
 
 			public:
-				void append(const Envelope &env) {
-					// TODO: Check overlaps and out-of-order
+				//! Appends env unless it is out of order or a duplicate of
+				//! the most recent sample. Returns whether it was appended.
+				bool append(const Envelope &env) {
+					if ( !empty() && (env.timestamp <= back().timestamp) ) {
+						return false;
+					}
 					push_back(env);
 					++_appends;
+					return true;
 				}
 
 				size_t appended() const { return _appends; }
 
 			public:
-				double lat;
-				double lon;
-				double elev;
-				bool   dirty;
+				double      lat;
+				double      lon;
+				double      elev;
+				bool        dirty;
+				//! Band+instrument code (e.g. "HG", "HH") this buffer is
+				//! currently bound to.
+				std::string channelCode;
 
 			private:
 				size_t _appends{0};
@@ -124,6 +132,8 @@ class App : public Seiscomp::Client::Application {
 		double compute(Seiscomp::DataModel::Origin *org, double mag, const std::string &region,
 		               int *stationCount = nullptr,
 		               std::vector<StationEval> *detail = nullptr);
+
+		int instrumentPriorityRank(const std::string &channelCode) const;
 
 		double cutoffDistanceKm(double mag) const;
 
@@ -216,12 +226,14 @@ class App : public Seiscomp::Client::Application {
 					& cfg(include, "include")
 					& cfg(exclude, "exclude")
 					& cfg(defaultSoilClass, "defaultSoilClass")
+					& cfg(instrumentPriority, "instrumentPriority")
 					;
 				}
 
 				std::vector<std::string> include;
 				std::vector<std::string> exclude;
 				std::string              defaultSoilClass;
+				std::vector<std::string> instrumentPriority{"H", "L", "N", "G"};
 			}                        sensorLocations;
 
 			struct {

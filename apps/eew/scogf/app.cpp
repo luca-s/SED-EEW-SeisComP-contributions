@@ -547,6 +547,9 @@ void App::handleMessage(Message *msg) {
 				continue;
 			}
 
+			// Band+instrument code is used to prioritize co-located instruments
+			auto code = chan->waveformID().channelCode();
+
 			for ( size_t vi = 0; vi < chan->envelopeValueCount(); ++vi ) {
 				auto value = chan->envelopeValue(vi);
 				if ( value->type() != "vel" ) {
@@ -585,6 +588,7 @@ void App::handleMessage(Message *msg) {
 						buffer->lat = loc.lat;
 						buffer->lon = loc.lon;
 						buffer->elev = elev;
+						buffer->channelCode = code;
 
 						addAssociations(sid, *buffer);
 
@@ -597,13 +601,35 @@ void App::handleMessage(Message *msg) {
 				}
 				else {
 					buffer = it->second.get();
+
+					if ( buffer->channelCode != code ) {
+						// A different sensor at the same NET.STA.LOC is now
+						// streaming: switch to it if it outranks the one
+						// currently bound, and start a fresh buffer
+						if ( instrumentPriorityRank(code) < instrumentPriorityRank(buffer->channelCode) ) {
+							SEISCOMP_INFO("%s: switching from %s to higher-priority %s",
+							              sid, buffer->channelCode, code);
+							auto *fresh = new EnvelopeBuffer(_settings.envelopes.bufferSize);
+							fresh->lat = buffer->lat;
+							fresh->lon = buffer->lon;
+							fresh->elev = buffer->elev;
+							fresh->channelCode = code;
+							_envelopeBuffers[sid].reset(fresh);
+							buffer = fresh;
+						}
+						else {
+							break; // ignoring lower-priority channel
+						}
+					}
+
 					_associationTable.setDirty(sid);
 				}
 
-				buffer->append({
-					vsenv->timestamp(),
-					value->value()
-				});
+				if ( !buffer->append({ vsenv->timestamp(), value->value() }) ) {
+					SEISCOMP_DEBUG("%s: dropped out-of-order/duplicate envelope sample at %s",
+					               sid, vsenv->timestamp().iso());
+					break;
+				}
 				buffer->dirty = true;
 				break;
 			}
@@ -812,6 +838,9 @@ void App::process(Origin *org, IO::RecordStream *rs) {
 				continue;
 			}
 
+			// Band+instrument code, e.g. "HG"/"HH": see instrumentPriorityRank().
+			auto code = rec->channelCode().substr(0, 2);
+
 			EnvelopeBuffer *buffer;
 
 			auto it = _envelopeBuffers.find(sid);
@@ -844,6 +873,7 @@ void App::process(Origin *org, IO::RecordStream *rs) {
 					buffer->lat = loc.lat;
 					buffer->lon = loc.lon;
 					buffer->elev = elev;
+					buffer->channelCode = code;
 
 					addAssociations(sid, *buffer);
 
@@ -856,6 +886,25 @@ void App::process(Origin *org, IO::RecordStream *rs) {
 			}
 			else {
 				buffer = it->second.get();
+
+				if ( buffer->channelCode != code ) {
+					// See the live-messaging equivalent in handleMessage():
+					// never splice two physically different sensors together.
+					if ( instrumentPriorityRank(code) < instrumentPriorityRank(buffer->channelCode) ) {
+						SEISCOMP_INFO("%s: switching from %s to higher-priority %s",
+						              sid, buffer->channelCode, code);
+						auto *fresh = new EnvelopeBuffer(_settings.envelopes.bufferSize);
+						fresh->lat = buffer->lat;
+						fresh->lon = buffer->lon;
+						fresh->elev = buffer->elev;
+						fresh->channelCode = code;
+						_envelopeBuffers[sid].reset(fresh);
+						buffer = fresh;
+					}
+					else {
+						continue; // ignoring lower-priority channel
+					}
+				}
 			}
 
 			DoubleArrayPtr tmp;
@@ -869,7 +918,10 @@ void App::process(Origin *org, IO::RecordStream *rs) {
 			auto dt = Core::TimeSpan(1.0 / rec->samplingFrequency());
 
 			for ( int i = 0; i < data->size(); ++i ) {
-				buffer->append({ timestamp, data->get(i) });
+				if ( !buffer->append({ timestamp, data->get(i) }) ) {
+					SEISCOMP_DEBUG("%s: dropped out-of-order/duplicate envelope sample at %s",
+					               sid, timestamp.iso());
+				}
 				timestamp += dt;
 			}
 
@@ -1160,6 +1212,28 @@ void App::writeDebugSnapshot(Origin *org, const Evaluation &eval,
 
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+int App::instrumentPriorityRank(const std::string &channelCode) const {
+
+	if ( channelCode.size() < 2 ) {
+		return static_cast<int>(_settings.sensorLocations.instrumentPriority.size());
+	}
+
+	const auto &priority = _settings.sensorLocations.instrumentPriority;
+	for ( size_t i = 0; i < priority.size(); ++i ) {
+		if ( !priority[i].empty() && (priority[i][0] == channelCode[1]) ) {
+			return static_cast<int>(i);
+		}
+	}
+
+	// Not listed: usable, but only as a last resort.
+	return static_cast<int>(priority.size());
+}
+// <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+
+
+// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 double App::cutoffDistanceKm(double mag) const {
 	// Optional magnitude dependent station search radius. If not configured,
 	// maximumDistance is used regardless of magnitude.
@@ -1366,7 +1440,6 @@ double App::compute(Origin *org, double mag, const string &region, int *stationC
 				continue;
 			}
 
-			int count = idx1 - idx0;
 			const double *dataPred = pred->typedData() + idx0;
 
 			// Position the buffer iterator at the first sample not before the
@@ -1377,30 +1450,37 @@ double App::compute(Origin *org, double mag, const string &region, int *stationC
 				++bit;
 			}
 
-			if ( bit == buffer->end() ) {
-				// A gap swallowed the whole window: no sample within [idx0, idx1)
-				// even though the buffer's overall time span covers it.
+			// Pair each predicted second in [idx0, idx1) with the observed
+			// sample at that exact second, if any. A gap is skipped
+			vector<double> obsSamples, predSamples;
+			obsSamples.reserve(idx1 - idx0);
+			predSamples.reserve(idx1 - idx0);
+			{
+				auto it = bit;
+				for ( int s = idx0; s < idx1; ++s ) {
+					const Time expected = org->time().value() + TimeSpan(s, 0);
+					while ( it != buffer->end() && it->timestamp < expected ) {
+						++it;
+					}
+					if ( (it != buffer->end()) && (it->timestamp < expected + TimeSpan(1, 0)) ) {
+						obsSamples.push_back(it->value);
+						predSamples.push_back(dataPred[s - idx0]);
+						++it;
+					}
+				}
+			}
+
+			const int nObs = static_cast<int>(obsSamples.size());
+			if ( nObs == 0 ) {
 				skip(assoc, sid, "empty correlation time window");
 				continue;
 			}
 
 			// Peak amplitudes over the window: observed vs. GMM-scaled predicted.
-			// A gap inside the window can leave fewer observed samples than
-			// count; nObs is what is actually available and is what the
-			// correlation below is computed over.
 			double maxObs = 0.0, maxPredWinRaw = 0.0;
-			int nObs = 0;
-			{
-				auto it = bit;
-				for ( ; nObs < count && it != buffer->end(); ++nObs, ++it ) {
-					maxObs = max(maxObs, it->value);
-					maxPredWinRaw = max(maxPredWinRaw, dataPred[nObs]);
-				}
-			}
-
-			if ( nObs == 0 ) {
-				skip(assoc, sid, "empty correlation time window");
-				continue;
+			for ( int i = 0; i < nObs; ++i ) {
+				maxObs = max(maxObs, obsSamples[i]);
+				maxPredWinRaw = max(maxPredWinRaw, predSamples[i]);
 			}
 
 			double maxPredWinScaled = maxPredWinRaw * scale;
@@ -1413,9 +1493,9 @@ double App::compute(Origin *org, double mag, const string &region, int *stationC
 			double normPred = maxPredWinRaw > 0.0 ? 1.0 / maxPredWinRaw : 1.0;
 
 			double sumX{0}, sumY{0}, sumX2{0}, sumY2{0}, sumXY{0};
-			for ( int i = 0; i < nObs; ++i, ++bit ) {
-				auto obs = bit->value * normObs;
-				auto pred = dataPred[i] * normPred;
+			for ( int i = 0; i < nObs; ++i ) {
+				auto obs = obsSamples[i] * normObs;
+				auto pred = predSamples[i] * normPred;
 
 				sumX += obs;
 				sumY += pred;
@@ -1484,22 +1564,28 @@ double App::compute(Origin *org, double mag, const string &region, int *stationC
 				                       pred->typedData() + pred->size());
 
 				// Observed envelope over a context window around [idx0, idx1],
-				// clamped to what the buffer actually covers.
+				// clamped to what the buffer actually covers, aligned to whole
+				// seconds. A gap is recorded as NaN
 				const double ctxStart = max(startTimeC, static_cast<double>(idx0) - 15.0);
 				const double ctxEnd = min(endTimeC, static_cast<double>(idx1) + 45.0);
-				const Time ctxStartAbs = org->time().value() + TimeSpan(ctxStart);
-				auto cit = buffer->begin();
-				while ( cit != buffer->end() && cit->timestamp < ctxStartAbs ) {
-					++cit;
-				}
-				if ( cit != buffer->end() ) {
-					se.observedT0 = static_cast<double>(cit->timestamp - org->time().value());
-					for ( ; cit != buffer->end(); ++cit ) {
-						double t = static_cast<double>(cit->timestamp - org->time().value());
-						if ( t > ctxEnd ) {
-							break;
+				const int ctxT0 = static_cast<int>(floor(ctxStart));
+				const int ctxT1 = static_cast<int>(ceil(ctxEnd));
+
+				if ( ctxT0 < ctxT1 ) {
+					se.observedT0 = ctxT0;
+					auto cit = buffer->begin();
+					for ( int s = ctxT0; s < ctxT1; ++s ) {
+						const Time expected = org->time().value() + TimeSpan(s, 0);
+						while ( cit != buffer->end() && cit->timestamp < expected ) {
+							++cit;
 						}
-						se.observed.push_back(cit->value);
+						if ( (cit != buffer->end()) && (cit->timestamp < expected + TimeSpan(1, 0)) ) {
+							se.observed.push_back(cit->value);
+							++cit;
+						}
+						else {
+							se.observed.push_back(numeric_limits<double>::quiet_NaN());
+						}
 					}
 				}
 

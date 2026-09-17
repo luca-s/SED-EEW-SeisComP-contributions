@@ -36,7 +36,8 @@ namespace EEW::OGF {
  *
  * All times are seconds relative to the origin time. Series are sampled at 1 Hz
  * (the envelope interval assumed throughout scogf). rawPredicted[i] is at time
- * rawPredictedT0 + i.
+ * rawPredictedT0 + i, likewise for observed/observedT0. A NaN entry in
+ * observed marks a second with no buffered sample.
  */
 struct StationEval {
 	std::string sid;                   //!< NET.STA.LOC
